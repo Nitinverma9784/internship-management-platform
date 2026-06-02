@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  
+  --color-brand-50: #f0fdfa;
+  --color-brand-100: #ccfbf1;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  
+  /* Natural Tones Color Blueprint */
+  --color-editorial: #0D2D2D;       /* Deep Forest Obsidian (Serif Headings) */
+  --color-editorial-light: #0D9488; /* Pristine Teal (Primary buttons, active indicators) */
+  --color-cream-bg: #ffffff;        /* Pure white for prominent card surfaces */
+  --color-cream-accent: #f1f0ec;    /* Warm sand cream accent splitters & borders */
+  --color-page-bg: #fdfcfb;         /* Soft natural paper/parchment background */
+  --color-sidebar-bg: #f9f8f6;      /* Natural linen sidebar canvas background */
+  --color-text-main: #1A1C1E;       /* Deep charcoal earth black */
+  --color-text-muted: #64748B;      /* Sophisticated slate grey */
+  --color-text-light: #94A3B8;      /* Clean muted grey details */
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-page-bg);
+  color: var(--color-text-main);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-serif);
+}
+
+/* Base custom input focus styling */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-editorial);
+  box-shadow: 0 0 0 2px rgba(17, 63, 72, 0.15);
+}
+
+/* Animations for tab transitions */
+.fade-in-up {
+  animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
