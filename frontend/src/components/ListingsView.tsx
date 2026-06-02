@@ -504,7 +504,7 @@ export default function ListingsView({
               <ul className="space-y-1.5">
                 {selectedListing.requirements.map((req, idx) => (
                   <li key={idx} className="text-xs text-[#64748B] flex items-start gap-2 leading-relaxed">
-                    <span className="text-editorial-light font-bold mt-1 shrink-0">GÇó</span>
+                    <span className="text-editorial-light font-bold mt-1 shrink-0">â€¢</span>
                     <span>{req}</span>
                   </li>
                 ))}
@@ -525,51 +525,8 @@ export default function ListingsView({
 
             {currentRole === 'Faculty' && (
               <div className="space-y-2.5 pt-4 border-t border-[#F1F0EC]">
-                <h4 className="text-xs font-mono uppercase tracking-widest text-[#94A3B8] font-bold">Faculty Listing Verification</h4>
-                <p className="text-xs text-[#64748B]">
-                  Current status: <span className="font-semibold">{selectedListing.facultyApprovalStatus || 'Pending'}</span>
-                </p>
-                {(selectedListing.facultyApprovalStatus || 'Pending') === 'Unverified' && selectedListing.facultyApprovalRemark && (
-                  <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded p-2">
-                    Remark: {selectedListing.facultyApprovalRemark}
-                  </p>
-                )}
-                <textarea
-                  rows={2}
-                  value={listingReviewRemarkDraft}
-                  onChange={(e) => setListingReviewRemarkDraft(e.target.value)}
-                  placeholder="Add remark when rejecting listing"
-                  className="w-full text-xs font-sans p-2 rounded-lg bg-white border border-[#ecece0] resize-none"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => onFacultyReviewListing?.(selectedListing.id, 'Verified')}
-                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 cursor-pointer"
-                    disabled={applications.some((a) => a.internshipId === selectedListing.id)}
-                  >
-                    Verify Listing
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (!listingReviewRemarkDraft.trim()) {
-                        triggerToast('Remark Required', 'Please add remark before rejecting listing.', 'error');
-                        return;
-                      }
-                      onFacultyReviewListing?.(selectedListing.id, 'Unverified', listingReviewRemarkDraft);
-                    }}
-                    className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-700 cursor-pointer"
-                    disabled={applications.some((a) => a.internshipId === selectedListing.id)}
-                  >
-                    Mark Unverified
-                  </button>
-                </div>
-                {applications.some((a) => a.internshipId === selectedListing.id) && (
-                  <p className="text-[11px] text-[#64748B] italic">
-                    Verification is only required before hiring starts. This opening already has active applications.
-                  </p>
-                )}
-                <div className="space-y-2 pt-2 border-t border-[#E5E2DE]">
-                  <p className="text-xs font-semibold text-editorial">Company Authenticity Check</p>
+                <h4 className="text-xs font-mono uppercase tracking-widest text-[#94A3B8] font-bold">Company Recruiter Verification</h4>
+                <div className="space-y-2 pt-2">
                   {allUsers
                     .filter(
                       (u) =>
@@ -577,36 +534,53 @@ export default function ListingsView({
                         (u.companyName || '').toLowerCase() === selectedListing.company.toLowerCase()
                     )
                     .map((recruiter) => (
-                      <div key={recruiter.id} className="p-2.5 bg-white border border-[#E5E2DE] rounded-lg space-y-2">
+                      <div key={recruiter.id} className="p-3 bg-[#F9F8F6] border border-[#E5E2DE] rounded-xl space-y-2">
                         <p className="text-xs font-semibold text-[#1A1C1E]">
                           {recruiter.name} ({recruiter.companyName})
                         </p>
-                        <p className="text-[11px] text-[#64748B]">
-                          Recruiter status: {recruiter.recruiterVerificationStatus || 'Pending'}
+                        <p className="text-[10px] text-[#64748B]">
+                          Status: <span className="font-semibold">{recruiter.recruiterVerificationStatus || 'Pending'}</span>
                         </p>
+                        {recruiter.recruiterVerificationStatus === 'Not Genuine' && recruiter.recruiterVerificationReason && (
+                          <p className="text-[10px] text-rose-700 bg-rose-50 p-1.5 rounded">Reason: {recruiter.recruiterVerificationReason}</p>
+                        )}
                         <div className="flex gap-2">
                           <button
                             onClick={() => onFacultyVerifyRecruiter?.(recruiter.id, 'Genuine')}
-                            className="px-2.5 py-1 bg-emerald-600 text-white rounded text-[11px] font-semibold hover:bg-emerald-700"
+                            className="px-2.5 py-1 bg-emerald-600 text-white rounded text-[11px] font-semibold hover:bg-emerald-700 cursor-pointer"
                           >
-                            Mark Genuine
+                            Verify
                           </button>
                           <button
                             onClick={() => {
                               if (!listingReviewRemarkDraft.trim()) {
-                                triggerToast('Reason Required', 'Add reason before marking recruiter not genuine.', 'error');
+                                triggerToast('Reason Required', 'Please add reason/remark before rejecting recruiter.', 'error');
                                 return;
                               }
                               onFacultyVerifyRecruiter?.(recruiter.id, 'Not Genuine', listingReviewRemarkDraft);
                             }}
-                            className="px-2.5 py-1 bg-rose-600 text-white rounded text-[11px] font-semibold hover:bg-rose-700"
+                            className="px-2.5 py-1 bg-rose-600 text-white rounded text-[11px] font-semibold hover:bg-rose-700 cursor-pointer"
                           >
-                            Mark Not Genuine
+                            Reject
                           </button>
                         </div>
                       </div>
                     ))}
+                  {allUsers.filter(
+                    (u) =>
+                      u.role === 'Company' &&
+                      (u.companyName || '').toLowerCase() === selectedListing.company.toLowerCase()
+                  ).length === 0 && (
+                    <p className="text-xs text-gray-500 italic">No recruiters found for this company.</p>
+                  )}
                 </div>
+                <textarea
+                  rows={2}
+                  value={listingReviewRemarkDraft}
+                  onChange={(e) => setListingReviewRemarkDraft(e.target.value)}
+                  placeholder="Reason/remark to use when rejecting recruiter"
+                  className="w-full text-xs font-sans p-2 rounded-lg bg-white border border-[#ecece0] resize-none"
+                />
               </div>
             )}
 
@@ -626,7 +600,7 @@ export default function ListingsView({
                       <div key={app.id} className="p-2.5 bg-[#F9F8F6] border border-[#E5E2DE] rounded-xl flex items-center justify-between hover:border-editorial-light/40 transition-colors">
                         <div className="text-left">
                           <p className="text-xs font-bold text-text-main leading-tight">{app.studentName}</p>
-                          <p className="text-[10px] text-text-muted mt-0.5">{app.studentCollege} GÇó {app.studentEmail}</p>
+                          <p className="text-[10px] text-text-muted mt-0.5">{app.studentCollege} Gï¿½ï¿½ {app.studentEmail}</p>
                         </div>
                         <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-bold border ${
                           app.status === 'Offer' ? 'bg-emerald-50 text-emerald-700 border-emerald-250' :
@@ -818,7 +792,7 @@ export default function ListingsView({
                       <FileText className="text-editorial" size={18} />
                       <div className="text-left">
                         <p className="text-xs font-semibold text-gray-800">{selectedResumeName}</p>
-                        <p className="text-[10px] text-gray-400 font-mono">Adobe PDF GÇó Auto attached</p>
+                        <p className="text-[10px] text-gray-400 font-mono">Adobe PDF Gï¿½ï¿½ Auto attached</p>
                       </div>
                     </div>
                     <span className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 py-0.5 px-2 rounded uppercase font-mono font-bold">

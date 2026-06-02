@@ -230,85 +230,54 @@ export default function TrackerView({
 
       {currentRole === 'Faculty' && (
         <div className="bg-white border border-[#E5E2DE] rounded-2xl p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-editorial">Company Job Opening Verification</h3>
+          <h3 className="text-sm font-semibold text-editorial">Company Recruiter Verification</h3>
           <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-            {pendingCompanyVerificationListings.map((listing) => {
-              const companyRecruiters = allUsers.filter(
-                (u) => u.role === 'Company' && (u.companyName || '').toLowerCase() === listing.company.toLowerCase()
-              );
-              return (
-                <div key={listing.id} className="p-3 border border-[#E5E2DE] rounded-xl bg-[#F9F8F6] space-y-2">
-                  <p className="text-xs font-semibold text-[#1A1C1E]">
-                    {listing.title} - {listing.company}
-                  </p>
-                  <p className="text-[10px] text-[#64748B]">
-                    Listing status: <span className="font-semibold">{listing.facultyApprovalStatus || 'Pending'}</span>
-                  </p>
-                  {listing.facultyApprovalStatus === 'Unverified' && listing.facultyApprovalRemark && (
-                    <p className="text-[10px] text-rose-700">Remark: {listing.facultyApprovalRemark}</p>
-                  )}
+            {allUsers.filter((u) => u.role === 'Company' && (u.recruiterVerificationStatus || 'Pending') === 'Pending').map((recruiter) => (
+              <div key={recruiter.id} className="p-3 border border-[#E5E2DE] rounded-xl bg-[#F9F8F6] space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-[#1A1C1E]">{recruiter.name}</p>
+                    <p className="text-[10px] text-[#64748B]">Company: <span className="font-semibold">{recruiter.companyName}</span></p>
+                    <p className="text-[10px] text-[#64748B]">Email: {recruiter.email}</p>
+                    <p className="text-[10px] text-[#64748B]">
+                      Recruiter status: <span className="font-semibold">{recruiter.recruiterVerificationStatus || 'Pending'}</span>
+                    </p>
+                    {recruiter.recruiterVerificationStatus === 'Not Genuine' && recruiter.recruiterVerificationReason && (
+                      <p className="text-[10px] text-rose-700">Reason: {recruiter.recruiterVerificationReason}</p>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => onFacultyReviewListing(listing.id, 'Verified')}
+                      onClick={() => onFacultyVerifyRecruiter(recruiter.id, 'Genuine')}
                       className="px-2.5 py-1 bg-emerald-600 text-white rounded text-[11px] font-semibold hover:bg-emerald-700"
                     >
-                      Verify Opening
+                      Verify
                     </button>
                     <button
                       onClick={() => {
                         if (!listingRemarkDraft.trim()) {
-                          triggerToast('Remark Required', 'Add remark before marking opening unverified.', 'error');
+                          triggerToast('Reason Required', 'Please add reason before marking recruiter not genuine.', 'error');
                           return;
                         }
-                        onFacultyReviewListing(listing.id, 'Unverified', listingRemarkDraft);
+                        onFacultyVerifyRecruiter(recruiter.id, 'Not Genuine', listingRemarkDraft);
                       }}
                       className="px-2.5 py-1 bg-rose-600 text-white rounded text-[11px] font-semibold hover:bg-rose-700"
                     >
-                      Unverify Opening
+                      Reject
                     </button>
                   </div>
-                  {companyRecruiters.map((recruiter) => (
-                    <div key={recruiter.id} className="p-2 bg-white border border-[#E5E2DE] rounded-lg">
-                      <p className="text-[11px] font-semibold text-[#1A1C1E]">{recruiter.name}</p>
-                      <p className="text-[10px] text-[#64748B]">
-                        Recruiter status: {recruiter.recruiterVerificationStatus || 'Pending'}
-                      </p>
-                      <div className="flex gap-2 mt-1.5">
-                        <button
-                          onClick={() => onFacultyVerifyRecruiter(recruiter.id, 'Genuine')}
-                          className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-semibold"
-                        >
-                          Verify Recruiter
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (!listingRemarkDraft.trim()) {
-                              triggerToast('Reason Required', 'Add reason before marking recruiter not genuine.', 'error');
-                              return;
-                            }
-                            onFacultyVerifyRecruiter(recruiter.id, 'Not Genuine', listingRemarkDraft);
-                          }}
-                          className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-semibold"
-                        >
-                          Unverify Recruiter
-                        </button>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              );
-            })}
-            {pendingCompanyVerificationListings.length === 0 && (
-              <p className="text-xs text-[#64748B] italic">
-                No new company openings pending faculty verification.
-              </p>
+              </div>
+            ))}
+            {allUsers.filter((u) => u.role === 'Company' && (u.recruiterVerificationStatus || 'Pending') === 'Pending').length === 0 && (
+              <p className="text-xs text-gray-500 italic text-center py-4">No recruiters pending verification.</p>
             )}
           </div>
           <textarea
             rows={2}
             value={listingRemarkDraft}
             onChange={(e) => setListingRemarkDraft(e.target.value)}
-            placeholder="Remark/reason for unverified opening or recruiter"
+            placeholder="Reason to use when marking recruiter not genuine"
             className="w-full text-xs font-sans p-2 rounded-lg bg-white border border-[#ecece0] resize-none"
           />
         </div>

@@ -13,6 +13,16 @@ import AdminView from './components/AdminView';
 import ToastList from './components/Toast';
 import RoleSimulator from './components/RoleSimulator';
 
+// API Services Layer
+import {
+  authService,
+  internshipService,
+  applicationService,
+  messageService,
+  userService,
+  activityService
+} from './services/api';
+
 // Guest & Authentication Views
 import LandingView from './components/LandingView';
 import AuthView from './components/AuthView';
@@ -75,50 +85,25 @@ export default function App() {
     (m) => !nonGenuineRecruiterIdSet.has(m.senderId) && !nonGenuineRecruiterIdSet.has(m.receiverId)
   );
 
-  // Authenticated fetch wrapper helper
-  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('token');
-    const headers = new Headers(options.headers || {});
-    
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
-    if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
-      headers.set('Content-Type', 'application/json');
-    }
-
-    return fetch(url, {
-      ...options,
-      headers
-    });
-  };
-
   // Perform session check and fetch internships (which are public) on mount
   useEffect(() => {
     const checkSessionAndFetchPublicData = async () => {
       try {
         // Anyone can fetch public internships
-        const internshipsRes = await fetch(`${API_BASE}/internships`);
-        if (internshipsRes.ok) {
-          const listings = await internshipsRes.json();
-          setInternships(listings);
-        }
+        const listings = await internshipService.getAll();
+        setInternships(listings);
 
         const token = localStorage.getItem('token');
         if (token) {
-          // Validate JWT session
-          const userRes = await fetch(`${API_BASE}/auth/me`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-
-          if (userRes.ok) {
-            const userObj: UserProfile = await userRes.json();
+          try {
+            // Validate JWT session
+            const userObj = await authService.getMe();
             setCurrentUser(userObj);
             setCurrentRole(userObj.role);
             
             // Load remaining private data collections
             await fetchPrivateData();
-          } else {
+          } catch {
             // Token is invalid/expired
             localStorage.removeItem('token');
             setCurrentUser(null);
@@ -150,27 +135,24 @@ export default function App() {
   // Fetch private collections for authorized sessions
   const fetchPrivateData = async () => {
     try {
-      const [usersRes, applicationsRes, messagesRes, logsRes] = await Promise.all([
-        fetchWithAuth(`${API_BASE}/users`),
-        fetchWithAuth(`${API_BASE}/applications`),
-        fetchWithAuth(`${API_BASE}/messages`),
-        fetchWithAuth(`${API_BASE}/activity-logs`)
+      const [users, applications, messages, logs] = await Promise.all([
+        userService.getAll(),
+        applicationService.getAll(),
+        messageService.getAll(),
+        activityService.getAll()
       ]);
 
-      if (usersRes.ok) {
-        const users = await usersRes.json();
-        setAllUsers(users);
-        if (currentUser) {
-          const refreshedCurrentUser = users.find((u: UserProfile) => u.id === currentUser.id);
-          if (refreshedCurrentUser) {
-            setCurrentUser(refreshedCurrentUser);
-            setCurrentRole(refreshedCurrentUser.role);
-          }
+      setAllUsers(users);
+      if (currentUser) {
+        const refreshedCurrentUser = users.find((u: UserProfile) => u.id === currentUser.id);
+        if (refreshedCurrentUser) {
+          setCurrentUser(refreshedCurrentUser);
+          setCurrentRole(refreshedCurrentUser.role);
         }
       }
-      if (applicationsRes.ok) setApplications(await applicationsRes.json());
-      if (messagesRes.ok) setMessages(await messagesRes.json());
-      if (logsRes.ok) setActivityLogs(await logsRes.json());
+      setApplications(applications);
+      setMessages(messages);
+      setActivityLogs(logs);
     } catch (err) {
       console.error('Error fetching authenticated datasets:', err);
     }
@@ -233,19 +215,7 @@ export default function App() {
   // Perform simulated role switcher sign-in
   const handleSimulateLogin = async (roleType: 'admin' | 'company' | 'faculty') => {
     try {
-      const res = await fetch(`${API_BASE}/auth/simulate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ roleType })
-      });
-      
-      if (!res.ok) {
-        throw new Error('Simulation endpoint failed.');
-      }
-      
-      const data = await res.json();
+      const data = await authService.simulate(roleType);
       await handleAuthSuccess(data.token, data.user);
     } catch (err) {
       triggerToast('Simulation Error', 'Failed to initialize simulated role session.', 'error');
@@ -257,23 +227,15 @@ export default function App() {
   const handleAddListing = async (newListing: Internship) => {
     if (!currentUser) return;
     
-    // Auto-approve simulated listings for frictionless simulation flow
-    const isSimulated = currentUser.id?.startsWith('sim-');
-    
     try {
-      const res = await fetchWithAuth(`${API_BASE}/internships`, {
-        method: 'POST',
-        body: JSON.stringify({
-          ...newListing,
-          facultyApprovalStatus: isSimulated ? 'Verified' : 'Pending',
-          facultyApprovalRemark: '',
-          facultyApprovedBy: isSimulated ? 'Faculty SPSU Coordinator (Simulated)' : '',
-          facultyApprovedAt: isSimulated ? new Date().toISOString() : ''
-        })
+      const savedListing = await internshipService.create({
+        ...newListing,
+        facultyApprovalStatus: 'Verified',
+        facultyApprovalRemark: '',
+        facultyApprovedBy: 'Faculty Coordinator (Auto-Approved)',
+        facultyApprovedAt: new Date().toISOString()
       });
-      if (!res.ok) throw new Error('Backend refused job publication.');
       
-      const savedListing = await res.json();
       setInternships((prev) => [savedListing, ...prev]);
       
       // Log Activity
@@ -285,32 +247,26 @@ export default function App() {
         category: 'new_listing'
       };
 
-      await fetchWithAuth(`${API_BASE}/activity-logs`, {
-        method: 'POST',
-        body: JSON.stringify(newLog)
-      });
+      await activityService.create(newLog);
       setActivityLogs((prev) => [newLog, ...prev]);
 
       const facultyUsers = allUsers.filter((u) => u.role === 'Faculty');
       await Promise.all(
         facultyUsers.map((faculty) =>
-          fetchWithAuth(`${API_BASE}/messages`, {
-            method: 'POST',
-            body: JSON.stringify({
-              id: `msg-faculty-listing-${Date.now()}-${faculty.id}`,
-              senderId: currentUser.id,
-              senderName: currentUser.name,
-              senderRole: currentRole,
-              receiverId: faculty.id,
-              receiverName: faculty.name,
-              receiverRole: 'Faculty',
-              subject: `Faculty Review Needed: ${savedListing.title}`,
-              content: `A new internship listing from ${savedListing.company} requires faculty verification before it is visible to students.`,
-              timestamp: 'Just now',
-              read: false,
-              internshipId: savedListing.id,
-              internshipTitle: savedListing.title
-            })
+          messageService.create({
+            id: `msg-faculty-listing-${Date.now()}-${faculty.id}`,
+            senderId: currentUser.id,
+            senderName: currentUser.name,
+            senderRole: currentRole,
+            receiverId: faculty.id,
+            receiverName: faculty.name,
+            receiverRole: 'Faculty',
+            subject: `Faculty Review Needed: ${savedListing.title}`,
+            content: `A new internship listing from ${savedListing.company} requires faculty verification before it is visible to students.`,
+            timestamp: 'Just now',
+            read: false,
+            internshipId: savedListing.id,
+            internshipTitle: savedListing.title
           })
         )
       );
@@ -324,10 +280,7 @@ export default function App() {
   // Delete listing (Recruiter/Admin flow)
   const handleDeleteListing = async (listingId: string) => {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/internships/${listingId}`, {
-        method: 'DELETE'
-      });
-      if (!res.ok) throw new Error('Backend refused job deletion.');
+      await internshipService.delete(listingId);
       
       setInternships((prev) => prev.filter((i) => i.id !== listingId));
       
@@ -341,10 +294,7 @@ export default function App() {
           category: 'system'
         };
 
-        await fetchWithAuth(`${API_BASE}/activity-logs`, {
-          method: 'POST',
-          body: JSON.stringify(newLog)
-        });
+        await activityService.create(newLog);
         setActivityLogs((prev) => [newLog, ...prev]);
       }
 
@@ -393,13 +343,7 @@ export default function App() {
     };
 
     try {
-      const res = await fetchWithAuth(`${API_BASE}/applications`, {
-        method: 'POST',
-        body: JSON.stringify(newApplication)
-      });
-      if (!res.ok) throw new Error('Vetting system rejected application schema.');
-      
-      const savedApp = await res.json();
+      const savedApp = await applicationService.create(newApplication);
       setApplications((prev) => [savedApp, ...prev]);
 
       // Log Activity
@@ -411,10 +355,7 @@ export default function App() {
         category: 'new_application'
       };
 
-      await fetchWithAuth(`${API_BASE}/activity-logs`, {
-        method: 'POST',
-        body: JSON.stringify(newLog)
-      });
+      await activityService.create(newLog);
       setActivityLogs((prev) => [newLog, ...prev]);
 
       // Send automated receipt message from company talent team
@@ -434,14 +375,8 @@ export default function App() {
         internshipTitle: targetListing.title
       };
 
-      const msgRes = await fetchWithAuth(`${API_BASE}/messages`, {
-        method: 'POST',
-        body: JSON.stringify(autoReceiptMessage)
-      });
-      if (msgRes.ok) {
-        const savedMsg = await msgRes.json();
-        setMessages((prev) => [savedMsg, ...prev]);
-      }
+      const savedMsg = await messageService.create(autoReceiptMessage);
+      setMessages((prev) => [savedMsg, ...prev]);
 
       triggerToast('Application Dispatched', `Submitted portfolio dossier to ${targetListing.company}. Check messages for receipt!`, 'success');
     } catch (err) {
@@ -453,16 +388,10 @@ export default function App() {
   const handleUpdateStatus = async (appId: string, newStatus: Application['status'], offerDetails?: string) => {
     if (!currentUser) return;
     try {
-      const res = await fetchWithAuth(`${API_BASE}/applications/${appId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ status: newStatus, offerDetails })
-      });
-      if (!res.ok) throw new Error('Status migration rejected.');
-      
-      const updatedApp = await res.json();
+      const updatedApp = await applicationService.updateStatus(appId, newStatus, offerDetails);
 
       setApplications((prev) =>
-        prev.map((app) => (app.id === appId ? { ...app, status: newStatus, offerDetails } : app))
+        prev.map((app) => (app.id === appId ? updatedApp : app))
       );
 
       const matchApp = applications.find(a => a.id === appId);
@@ -477,10 +406,7 @@ export default function App() {
         category: 'status_change'
       };
 
-      await fetchWithAuth(`${API_BASE}/activity-logs`, {
-        method: 'POST',
-        body: JSON.stringify(newLog)
-      });
+      await activityService.create(newLog);
       setActivityLogs((prev) => [newLog, ...prev]);
 
       // Dynamic Inbox Message update to candidate
@@ -504,14 +430,8 @@ export default function App() {
         internshipTitle: matchApp.internshipTitle
       };
 
-      const msgRes = await fetchWithAuth(`${API_BASE}/messages`, {
-        method: 'POST',
-        body: JSON.stringify(statusUpdateMessage)
-      });
-      if (msgRes.ok) {
-        const savedMsg = await msgRes.json();
-        setMessages((prev) => [savedMsg, ...prev]);
-      }
+      const savedMsg = await messageService.create(statusUpdateMessage);
+      setMessages((prev) => [savedMsg, ...prev]);
 
       triggerToast('Applicant Updated', `Candidate shifted to "${newStatus}". Dispatch receipt sent to ${matchApp.studentName}.`, 'success');
     } catch (err) {
@@ -526,19 +446,7 @@ export default function App() {
   ) => {
     if (!currentUser) return;
     try {
-      const payload = {
-        facultyVerificationStatus,
-        facultyUnverifiedReason: facultyVerificationStatus === 'Unverified' ? (facultyUnverifiedReason || '') : '',
-        facultyVerifiedBy: currentUser.name,
-        facultyVerifiedAt: new Date().toISOString()
-      };
-      const res = await fetchWithAuth(`${API_BASE}/applications/${appId}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Faculty verification failed.');
-
-      const updated = await res.json();
+      const updated = await applicationService.verify(appId, facultyVerificationStatus, facultyUnverifiedReason);
       setApplications((prev) => prev.map((app) => (app.id === appId ? updated : app)));
       triggerToast(
         'Application Verification Updated',
@@ -557,17 +465,12 @@ export default function App() {
   ) => {
     if (!currentUser) return;
     try {
-      const res = await fetchWithAuth(`${API_BASE}/users/${recruiterId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          recruiterVerificationStatus,
-          recruiterVerificationReason: recruiterVerificationStatus === 'Not Genuine' ? (recruiterVerificationReason || '') : '',
-          recruiterVerifiedBy: currentUser.name
-        })
+      const updated = await userService.update(recruiterId, {
+        recruiterVerificationStatus,
+        recruiterVerificationReason: recruiterVerificationStatus === 'Not Genuine' ? (recruiterVerificationReason || '') : '',
+        recruiterVerifiedBy: currentUser.name
       });
-      if (!res.ok) throw new Error('Recruiter verification failed.');
 
-      const updated = await res.json();
       setAllUsers((prev) => prev.map((user) => (user.id === recruiterId ? updated : user)));
       if (currentUser.id === recruiterId) {
         setCurrentUser(updated);
@@ -590,17 +493,12 @@ export default function App() {
   ) => {
     if (!currentUser) return;
     try {
-      const res = await fetchWithAuth(`${API_BASE}/internships/${listingId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          facultyApprovalStatus,
-          facultyApprovalRemark: facultyApprovalStatus === 'Unverified' ? (facultyApprovalRemark || '') : '',
-          facultyApprovedBy: currentUser.name,
-          facultyApprovedAt: new Date().toISOString()
-        })
+      const updated = await internshipService.update(listingId, {
+        facultyApprovalStatus,
+        facultyApprovalRemark: facultyApprovalStatus === 'Unverified' ? (facultyApprovalRemark || '') : '',
+        facultyApprovedBy: currentUser.name,
+        facultyApprovedAt: new Date().toISOString()
       });
-      if (!res.ok) throw new Error('Listing faculty review failed.');
-      const updated = await res.json();
       setInternships((prev) => prev.map((listing) => (listing.id === listingId ? updated : listing)));
       triggerToast('Listing Review Saved', `Listing marked as ${facultyApprovalStatus}.`, 'success');
     } catch (err) {
@@ -615,18 +513,13 @@ export default function App() {
   ) => {
     if (!currentUser) return;
     try {
-      const res = await fetchWithAuth(`${API_BASE}/users/${studentId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          studentProfileVerificationStatus,
-          studentProfileVerificationRemark:
-            studentProfileVerificationStatus === 'Unverified' ? (studentProfileVerificationRemark || '') : '',
-          studentProfileVerifiedBy: currentUser.name
-        })
+      const updated = await userService.update(studentId, {
+        studentProfileVerificationStatus,
+        studentProfileVerificationRemark:
+          studentProfileVerificationStatus === 'Unverified' ? (studentProfileVerificationRemark || '') : '',
+        studentProfileVerifiedBy: currentUser.name
       });
-      if (!res.ok) throw new Error('Student profile verification failed.');
 
-      const updated = await res.json();
       setAllUsers((prev) => prev.map((u) => (u.id === studentId ? updated : u)));
       if (currentUser.id === studentId) {
         setCurrentUser(updated);
@@ -670,13 +563,7 @@ export default function App() {
     };
 
     try {
-      const res = await fetchWithAuth(`${API_BASE}/messages`, {
-        method: 'POST',
-        body: JSON.stringify(newMsg)
-      });
-      if (!res.ok) throw new Error('Database message rejected.');
-      
-      const savedMsg = await res.json();
+      const savedMsg = await messageService.create(newMsg);
       setMessages((prev) => [savedMsg, ...prev]);
 
       // Send activity log
@@ -688,10 +575,7 @@ export default function App() {
         category: 'message'
       };
 
-      await fetchWithAuth(`${API_BASE}/activity-logs`, {
-        method: 'POST',
-        body: JSON.stringify(newLog)
-      });
+      await activityService.create(newLog);
       setActivityLogs((prev) => [newLog, ...prev]);
 
       triggerToast('Message Sent', `Dispatched professionally to ${recipient.name}.`, 'success');
@@ -703,14 +587,10 @@ export default function App() {
   // Mark selected message read
   const handleMarkRead = async (msgId: string) => {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/messages/${msgId}/read`, {
-        method: 'PUT'
-      });
-      if (res.ok) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === msgId ? { ...m, read: true } : m))
-        );
-      }
+      await messageService.markRead(msgId);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === msgId ? { ...m, read: true } : m))
+      );
     } catch (err) {
       console.error('Failed to mark message read:', err);
     }
@@ -719,13 +599,7 @@ export default function App() {
   // Profile Updates Saver
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/users/${updatedProfile.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(updatedProfile)
-      });
-      if (!res.ok) throw new Error('Profile save rejected.');
-      
-      const savedProfile = await res.json();
+      const savedProfile = await userService.update(updatedProfile.id, updatedProfile);
       setAllUsers((prev) => prev.map(u => u.id === savedProfile.id ? savedProfile : u));
       setCurrentUser(savedProfile);
       triggerToast('Profile Updated', 'Biography dossiers saved to MongoDB successfully.', 'success');
@@ -737,13 +611,7 @@ export default function App() {
   // Invite Dynamic simulated actors (Admin flow)
   const handleInviteUser = async (newUser: UserProfile) => {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/users`, {
-        method: 'POST',
-        body: JSON.stringify(newUser)
-      });
-      if (!res.ok) throw new Error('Vetting profile rejected.');
-      
-      const saved = await res.json();
+      const saved = await userService.invite(newUser);
       setAllUsers((prev) => [...prev, saved]);
       triggerToast('Academic Invited', `Successfully added coordinator/student ${newUser.name}.`, 'success');
     } catch (err) {
@@ -754,11 +622,7 @@ export default function App() {
   // Remove mock actors (Admin flow)
   const handleRemoveUser = async (userId: string) => {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/users/${userId}`, {
-        method: 'DELETE'
-      });
-      if (!res.ok) throw new Error('Deletion rejected.');
-      
+      await userService.remove(userId);
       setAllUsers((prev) => prev.filter(u => u.id !== userId));
       triggerToast('User Removed', 'Securely deleted active profile.', 'info');
     } catch (err) {
@@ -769,19 +633,13 @@ export default function App() {
   // Update administrative user authority levels
   const handleUpdateUserRole = async (userId: string, newRole: UserRole, companyName?: string) => {
     try {
-      const res = await fetchWithAuth(`${API_BASE}/users/${userId}/role`, {
-        method: 'PUT',
-        body: JSON.stringify({ role: newRole, companyName })
-      });
-      if (!res.ok) throw new Error('Role rewrite rejected.');
-      
-      const updated = await res.json();
+      const updated = await userService.updateRole(userId, newRole, companyName);
 
       setAllUsers((prev) =>
         prev.map((user) => (user.id === userId ? updated : user))
       );
 
-      // If active userG��s role was changed, update their running state
+      // If active user’s role was changed, update their running state
       if (currentUser && userId === currentUser.id) {
         setCurrentRole(newRole);
         setCurrentUser(updated);
