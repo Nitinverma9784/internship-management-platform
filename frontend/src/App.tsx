@@ -11,6 +11,7 @@ import ProfileView from './components/ProfileView';
 import MessagesView from './components/MessagesView';
 import AdminView from './components/AdminView';
 import ToastList from './components/Toast';
+import RoleSimulator from './components/RoleSimulator';
 
 // Guest & Authentication Views
 import LandingView from './components/LandingView';
@@ -229,18 +230,45 @@ export default function App() {
     triggerToast('Logged Out', 'You have securely signed out of your portal.', 'info');
   };
 
+  // Perform simulated role switcher sign-in
+  const handleSimulateLogin = async (roleType: 'admin' | 'company' | 'faculty') => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/simulate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ roleType })
+      });
+      
+      if (!res.ok) {
+        throw new Error('Simulation endpoint failed.');
+      }
+      
+      const data = await res.json();
+      await handleAuthSuccess(data.token, data.user);
+    } catch (err) {
+      triggerToast('Simulation Error', 'Failed to initialize simulated role session.', 'error');
+      throw err;
+    }
+  };
+
   // Add listing (Recruiter flow)
   const handleAddListing = async (newListing: Internship) => {
     if (!currentUser) return;
+    
+    // Auto-approve simulated listings for frictionless simulation flow
+    const isSimulated = currentUser.id?.startsWith('sim-');
+    
     try {
       const res = await fetchWithAuth(`${API_BASE}/internships`, {
         method: 'POST',
         body: JSON.stringify({
           ...newListing,
-          facultyApprovalStatus: 'Pending',
+          facultyApprovalStatus: isSimulated ? 'Verified' : 'Pending',
           facultyApprovalRemark: '',
-          facultyApprovedBy: '',
-          facultyApprovedAt: ''
+          facultyApprovedBy: isSimulated ? 'Faculty SPSU Coordinator (Simulated)' : '',
+          facultyApprovedAt: isSimulated ? new Date().toISOString() : ''
         })
       });
       if (!res.ok) throw new Error('Backend refused job publication.');
@@ -753,7 +781,7 @@ export default function App() {
         prev.map((user) => (user.id === userId ? updated : user))
       );
 
-      // If active userGÇÖs role was changed, update their running state
+      // If active userGï¿½ï¿½s role was changed, update their running state
       if (currentUser && userId === currentUser.id) {
         setCurrentRole(newRole);
         setCurrentUser(updated);
@@ -783,11 +811,19 @@ export default function App() {
   if (!currentUser) {
     if (authMode) {
       return (
-        <AuthView 
-          initialMode={authMode} 
-          onAuthSuccess={handleAuthSuccess} 
-          onBackToLanding={() => setAuthMode(null)} 
-        />
+        <>
+          <AuthView 
+            initialMode={authMode} 
+            onAuthSuccess={handleAuthSuccess} 
+            onBackToLanding={() => setAuthMode(null)} 
+          />
+          <RoleSimulator 
+            currentRole={currentRole}
+            currentUser={currentUser}
+            onSimulateLogin={handleSimulateLogin}
+            onLogout={handleLogout}
+          />
+        </>
       );
     }
     
@@ -801,7 +837,7 @@ export default function App() {
                 onClick={() => setIsBrowsing(false)}
                 className="text-xs font-semibold text-editorial hover:underline cursor-pointer"
               >
-                GåÉ Back to Home
+                Go Back to Home
               </button>
               <span className="h-4 w-px bg-cream-accent mx-2" />
               <span className="text-[10px] font-mono tracking-widest text-[#64748B] bg-[#F9F8F6] px-2 py-0.5 rounded border border-[#E5E2DE] uppercase">
@@ -853,15 +889,29 @@ export default function App() {
           </main>
           
           <ToastList toasts={toasts} onCloseToast={handleCloseToast} />
+          <RoleSimulator 
+            currentRole={currentRole}
+            currentUser={currentUser}
+            onSimulateLogin={handleSimulateLogin}
+            onLogout={handleLogout}
+          />
         </div>
       );
     }
 
     return (
-      <LandingView 
-        onBrowseListings={() => setIsBrowsing(true)} 
-        onStartAuth={(mode) => setAuthMode(mode)} 
-      />
+      <>
+        <LandingView 
+          onBrowseListings={() => setIsBrowsing(true)} 
+          onStartAuth={(mode) => setAuthMode(mode)} 
+        />
+        <RoleSimulator 
+          currentRole={currentRole}
+          currentUser={currentUser}
+          onSimulateLogin={handleSimulateLogin}
+          onLogout={handleLogout}
+        />
+      </>
     );
   }
 
@@ -1007,6 +1057,14 @@ export default function App() {
 
       {/* Dynamic Toast Popup Container */}
       <ToastList toasts={toasts} onCloseToast={handleCloseToast} />
+
+      {/* Global Role Simulator Switcher */}
+      <RoleSimulator 
+        currentRole={currentRole}
+        currentUser={currentUser}
+        onSimulateLogin={handleSimulateLogin}
+        onLogout={handleLogout}
+      />
 
     </div>
   );

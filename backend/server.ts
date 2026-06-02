@@ -31,15 +31,14 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Main API Router Orchestrator
 app.use('/api', apiRouter);
 
-// Database Seeder Logic (Removes all hardcoded listings and logs for a clean production database)
+// Database Seeder Logic (Retains database listings across server boots for persistence)
 async function clearHardcodedCollections() {
   try {
-    console.log('Clearing hardcoded internship opportunity boards and activity logs from MongoDB...');
-    await InternshipModel.deleteMany({});
-    await ActivityLogModel.deleteMany({});
-    console.log('Database initialized with 105% real, clean collections.');
+    console.log('Skipping aggressive wiping of internship opportunity boards to enable database persistence...');
+    // We retain user/simulated listings so they can perform all real actions persistently in MongoDB
+    console.log('Database initialized with 105% real, persistent collections.');
   } catch (error) {
-    console.error('Error clearing database collections:', error);
+    console.error('Error in database seeder:', error);
   }
 }
 
