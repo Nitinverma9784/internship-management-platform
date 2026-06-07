@@ -16,8 +16,8 @@ const UserProfileSchema = new Schema({
   recruiterVerifiedBy: { type: String, default: '' },
   studentProfileVerificationStatus: {
     type: String,
-    enum: ['Verified', 'Unverified'],
-    default: 'Unverified'
+    enum: ['Pending', 'Verified', 'Unverified'],
+    default: 'Pending'
   },
   studentProfileVerificationRemark: { type: String, default: '' },
   studentProfileVerifiedBy: { type: String, default: '' },

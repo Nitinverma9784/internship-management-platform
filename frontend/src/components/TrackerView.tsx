@@ -11,7 +11,7 @@ interface TrackerViewProps {
   onUpdateStatus: (appId: string, newStatus: Application['status'], offerDetails?: string) => void;
   onFacultyVerifyApplication: (appId: string, status: 'Verified' | 'Unverified', reason?: string) => void;
   onFacultyVerifyRecruiter: (recruiterId: string, status: 'Genuine' | 'Not Genuine', reason?: string) => void;
-  onFacultyVerifyStudentProfile: (studentId: string, status: 'Verified' | 'Unverified', remark?: string) => void;
+  onFacultyVerifyStudentProfile: (studentId: string, status: 'Pending' | 'Verified' | 'Unverified', remark?: string) => void;
   onFacultyReviewListing: (listingId: string, status: 'Verified' | 'Unverified', remark?: string) => void;
   triggerToast: (title: string, text: string, type: 'success' | 'info' | 'error') => void;
 }
@@ -32,11 +32,13 @@ export default function TrackerView({
   
   const [viewMode, setViewMode] = useState<'kanban' | 'audit'>('kanban');
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<UserProfile | null>(null);
   const [activeAuditTab, setActiveAuditTab] = useState<'students' | 'listings' | 'recruiters'>('students');
 
   // Draft reason states
   const [recruiterReasonDraft, setRecruiterReasonDraft] = useState('');
   const [studentReasonDraft, setStudentReasonDraft] = useState('');
+  const [studentRemarkDraft, setStudentRemarkDraft] = useState('');
   const [listingRemarkDraft, setListingRemarkDraft] = useState('');
   const [appReasonDraft, setAppReasonDraft] = useState('');
   const [offerTextDraft, setOfferTextDraft] = useState('');
@@ -233,28 +235,39 @@ export default function TrackerView({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-left">
               <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
                 <h3 className="text-sm font-semibold text-slate-900 font-display">Pending Student Verification</h3>
+                <p className="text-[10px] text-slate-400 italic mb-2 select-none">Click any student card to audit their full profile details.</p>
                 <div className="space-y-3 overflow-y-auto max-h-96">
                   {allUsers.filter((u) => u.role === 'Student' && (u.studentProfileVerificationStatus || 'Pending') === 'Pending').map((student) => (
-                    <div key={student.id} className="p-3 border border-slate-200 rounded-xl bg-slate-50 flex justify-between items-center">
+                    <div
+                      key={student.id}
+                      onClick={() => setSelectedStudent(student)}
+                      className="p-3 border border-slate-200 hover:border-brand-600 rounded-xl bg-slate-50 flex justify-between items-center cursor-pointer transition-all hover:shadow-xs group"
+                    >
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-900 truncate">{student.name}</p>
+                        <p className="text-xs font-bold text-slate-900 group-hover:text-brand-650 truncate">{student.name}</p>
                         <p className="text-[10px] text-slate-450 truncate">{student.email}</p>
                         <p className="text-[10px] text-slate-500">{student.college} • major: {student.graduationYear || '2026'}</p>
                       </div>
                       <div className="flex gap-2 shrink-0 select-none">
                         <button
-                          onClick={() => onFacultyVerifyStudentProfile(student.id, 'Verified')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onFacultyVerifyStudentProfile(student.id, 'Verified');
+                            triggerToast('Student Verified', `Successfully verified ${student.name}'s profile.`, 'success');
+                          }}
                           className="px-2.5 py-1 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 cursor-pointer"
                         >
                           Verify
                         </button>
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             if (!studentReasonDraft.trim()) {
-                              triggerToast('Reason Required', 'Provide feedback reason.', 'error');
+                              triggerToast('Reason Required', 'Provide feedback remark reason in the box below.', 'error');
                               return;
                             }
                             onFacultyVerifyStudentProfile(student.id, 'Unverified', studentReasonDraft);
+                            triggerToast('Student Flagged', `Marked ${student.name}'s profile as unverified.`, 'info');
                             setStudentReasonDraft('');
                           }}
                           className="px-2.5 py-1 bg-rose-600 text-white rounded text-[10px] font-bold hover:bg-rose-700 cursor-pointer"
@@ -272,18 +285,23 @@ export default function TrackerView({
                   rows={2}
                   value={studentReasonDraft}
                   onChange={(e) => setStudentReasonDraft(e.target.value)}
-                  placeholder="Feedback details when rejecting a student profile..."
+                  placeholder="Feedback details/remark for quick rejection button..."
                   className="w-full text-xs font-sans p-2 rounded-lg bg-white border border-slate-200 resize-none mt-2"
                 />
               </div>
 
               <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
                 <h3 className="text-sm font-semibold text-slate-900 font-display">Student Verification Logs</h3>
+                <p className="text-[10px] text-slate-400 italic mb-2 select-none">Click any student card to review logs or details.</p>
                 <div className="space-y-2 overflow-y-auto max-h-96">
                   {allUsers.filter((u) => u.role === 'Student' && (u.studentProfileVerificationStatus || 'Pending') !== 'Pending').map((student) => (
-                    <div key={student.id} className="p-3 border border-slate-200 rounded-xl bg-slate-50/50 flex justify-between items-center text-xs">
+                    <div
+                      key={student.id}
+                      onClick={() => setSelectedStudent(student)}
+                      className="p-3 border border-slate-200 hover:border-brand-600 rounded-xl bg-slate-50/50 flex justify-between items-center text-xs cursor-pointer transition-all hover:shadow-xs group"
+                    >
                       <div>
-                        <p className="font-bold text-slate-900">{student.name}</p>
+                        <p className="font-bold text-slate-900 group-hover:text-brand-650">{student.name}</p>
                         <p className="text-[10px] text-slate-400">{student.email}</p>
                         <p className="text-[10px] text-slate-500 mt-1">
                           Verified: <span className={student.studentProfileVerificationStatus === 'Verified' ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>{student.studentProfileVerificationStatus}</span>
@@ -294,10 +312,24 @@ export default function TrackerView({
                       </div>
                       {currentRole === 'Faculty' && (
                         <button
-                          onClick={() => onFacultyVerifyStudentProfile(student.id, 'Verified')}
-                          className="px-2 py-0.5 bg-slate-200 text-slate-800 hover:bg-brand-600 hover:text-white rounded text-[10px] transition-colors cursor-pointer select-none"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (student.studentProfileVerificationStatus === 'Verified') {
+                              const remark = window.prompt(`Enter rejection remark for ${student.name}:`) || 'Vetting audit flagged.';
+                              onFacultyVerifyStudentProfile(student.id, 'Unverified', remark);
+                              triggerToast('Student Profile Flagged', `Marked ${student.name}'s profile as unverified.`, 'info');
+                            } else {
+                              onFacultyVerifyStudentProfile(student.id, 'Verified');
+                              triggerToast('Student Verified', `Successfully verified ${student.name}'s profile.`, 'success');
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer select-none ${
+                            student.studentProfileVerificationStatus === 'Verified'
+                              ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-sm'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                          }`}
                         >
-                          Reset Vetting
+                          {student.studentProfileVerificationStatus === 'Verified' ? 'Reject' : 'Verify'}
                         </button>
                       )}
                     </div>
@@ -661,6 +693,228 @@ export default function TrackerView({
                   </h5>
                   <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 font-sans leading-relaxed select-text whitespace-pre-line">
                     {selectedApp.offerDetails}
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {selectedStudent && createPortal(
+        <div className="fixed inset-0 bg-black/45 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-text animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-slate-200 relative overflow-y-auto max-h-[90vh]">
+            
+            <button
+              onClick={() => {
+                setSelectedStudent(null);
+                setStudentRemarkDraft('');
+              }}
+              className="absolute top-4 right-4 p-1.5 rounded-full text-slate-400 hover:text-slate-900 hover:bg-slate-55 transition-colors cursor-pointer select-none"
+            >
+              <i className="fa-solid fa-xmark text-sm" />
+            </button>
+
+            <div className="border-b border-slate-200 pb-4 mb-4 text-left">
+              <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest font-bold select-none">
+                Student Profile Dossier
+              </span>
+              <h3 className="font-serif font-semibold text-xl text-slate-900 font-display">
+                {selectedStudent.name}
+              </h3>
+              <p className="text-xs text-slate-500">{selectedStudent.email}</p>
+            </div>
+
+            <div className="space-y-5">
+              
+              {/* College & Graduation */}
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200/60 p-4 rounded-xl text-left">
+                <div>
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-semibold">University/College</span>
+                  <p className="text-xs font-semibold text-slate-905">{selectedStudent.college || 'Not Specified'}</p>
+                </div>
+                <div>
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Graduation Year</span>
+                  <p className="text-xs font-semibold text-slate-905">{selectedStudent.graduationYear || 'Not Specified'}</p>
+                </div>
+              </div>
+
+              {/* Bio */}
+              <div className="space-y-1.5 text-left font-sans">
+                <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-450 font-bold select-none">Biography</h5>
+                <p className="text-xs leading-relaxed text-slate-650 bg-slate-50/50 border border-slate-200 p-3.5 rounded-xl whitespace-pre-line select-text">
+                  {selectedStudent.bio || 'No biography written yet.'}
+                </p>
+              </div>
+
+              {/* Skills */}
+              <div className="space-y-1.5 text-left">
+                <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-455 font-bold select-none">Skills & Competencies</h5>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedStudent.skills && selectedStudent.skills.length > 0 ? (
+                    selectedStudent.skills.map((skill) => (
+                      <span key={skill} className="text-xs bg-brand-50 text-brand-650 px-2.5 py-1 rounded-md font-mono border border-brand-100">
+                        {skill}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">No skills listed.</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Grades */}
+              <div className="space-y-1.5 text-left">
+                <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-450 font-bold select-none">Academic Transcript (Grades)</h5>
+                {selectedStudent.grades && selectedStudent.grades.filter(g => g.gpa.trim() !== '').length > 0 ? (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-xs font-sans">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-250 font-mono text-[10px] text-slate-505 uppercase">
+                          <th className="px-4 py-2 text-left">Semester</th>
+                          <th className="px-4 py-2 text-right">GPA (out of 10)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedStudent.grades.filter(g => g.gpa.trim() !== '').map((grade, idx) => (
+                          <tr key={idx} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/30">
+                            <td className="px-4 py-2 text-slate-705">{grade.semester}</td>
+                            <td className="px-4 py-2 text-right font-mono font-bold text-slate-900">{grade.gpa}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-450 italic">No grades recorded.</p>
+                )}
+              </div>
+
+              {/* Certifications */}
+              <div className="space-y-1.5 text-left">
+                <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-450 font-bold select-none">Professional Certifications</h5>
+                {selectedStudent.certificates && selectedStudent.certificates.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {selectedStudent.certificates.map((cert, idx) => (
+                      <div key={idx} className="p-3 bg-slate-50/50 border border-slate-200 rounded-xl space-y-1 text-xs">
+                        <p className="font-bold text-slate-900 leading-tight">{cert.name}</p>
+                        <p className="text-[10px] text-slate-500">{cert.issuer} • {cert.date}</p>
+                        {cert.credentialUrl && (
+                          <a href={cert.credentialUrl} target="_blank" rel="noreferrer" className="text-[9px] font-bold text-brand-600 hover:underline inline-flex items-center gap-0.5 mt-1">
+                            View Credential <i className="fa-solid fa-up-right-from-square text-[8px]" />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-450 italic">No certifications listed.</p>
+                )}
+              </div>
+
+              {/* Resume PDF File */}
+              <div className="space-y-1.5 text-left">
+                <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-450 font-bold select-none">Resume PDF File</h5>
+                {selectedStudent.resumeName ? (
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <i className="fa-solid fa-file-pdf text-rose-600 text-base shrink-0" />
+                      <span className="text-xs text-slate-900 truncate font-semibold font-mono">{selectedStudent.resumeName}</span>
+                    </div>
+                    {selectedStudent.resumeUrl ? (
+                      <a
+                        href={selectedStudent.resumeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-slate-900 hover:bg-brand-600 text-white rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all select-none"
+                      >
+                        <span>Download</span>
+                        <i className="fa-solid fa-arrow-down-long text-[9px] ml-0.5" />
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 italic select-none">Local sync only</span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-450 italic">No resume uploaded.</p>
+                )}
+              </div>
+
+              {/* Social and Portfolios */}
+              <div className="space-y-2 text-left pt-2 border-t border-slate-100">
+                <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-450 font-bold select-none">Social and Portfolios</h5>
+                <div className="flex flex-wrap gap-3 text-xs text-slate-650">
+                  {selectedStudent.portfolioUrl && (
+                    <a href={selectedStudent.portfolioUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-brand-600">
+                      <i className="fa-solid fa-globe" /> Portfolio
+                    </a>
+                  )}
+                  {selectedStudent.githubUrl && (
+                    <a href={selectedStudent.githubUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-brand-600">
+                      <i className="fa-brands fa-github" /> GitHub
+                    </a>
+                  )}
+                  {selectedStudent.linkedinUrl && (
+                    <a href={selectedStudent.linkedinUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-brand-600">
+                      <i className="fa-brands fa-linkedin text-blue-700" /> LinkedIn
+                    </a>
+                  )}
+                  {selectedStudent.xUrl && (
+                    <a href={selectedStudent.xUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-brand-600">
+                      <i className="fa-brands fa-x-twitter" /> Twitter/X
+                    </a>
+                  )}
+                  {!selectedStudent.portfolioUrl && !selectedStudent.githubUrl && !selectedStudent.linkedinUrl && !selectedStudent.xUrl && (
+                    <span className="text-xs text-slate-400 italic">No social links configured.</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Faculty Coordinator Controls */}
+              {currentRole === 'Faculty' && (
+                <div className="space-y-3 pt-4 border-t border-slate-200 text-left">
+                  <h5 className="text-[10px] font-mono uppercase tracking-wider text-slate-450 font-bold select-none">
+                    Faculty Coordinator Audit Actions
+                  </h5>
+                  
+                  <textarea
+                    rows={2}
+                    value={studentRemarkDraft}
+                    onChange={(e) => setStudentRemarkDraft(e.target.value)}
+                    placeholder="Enter rejection feedback remark (required only if rejecting)..."
+                    className="w-full text-xs font-sans p-2.5 rounded-lg bg-white border border-slate-200 resize-none"
+                  />
+
+                  <div className="grid grid-cols-2 gap-3 select-none pt-1">
+                    <button
+                      onClick={() => {
+                        onFacultyVerifyStudentProfile(selectedStudent.id, 'Verified', studentRemarkDraft || undefined);
+                        triggerToast('Student Verified', `Successfully verified ${selectedStudent.name}'s profile.`, 'success');
+                        setSelectedStudent(null);
+                        setStudentRemarkDraft('');
+                      }}
+                      className="py-2 px-1 rounded-xl bg-emerald-650 hover:bg-emerald-700 text-white text-[11px] font-bold text-center cursor-pointer transition-all flex items-center justify-center gap-1"
+                    >
+                      <i className="fa-solid fa-circle-check text-xs" /> Approve Profile
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!studentRemarkDraft.trim()) {
+                          triggerToast('Remark Required', 'Explain why student profile is unverified.', 'error');
+                          return;
+                        }
+                        onFacultyVerifyStudentProfile(selectedStudent.id, 'Unverified', studentRemarkDraft);
+                        triggerToast('Student Profile Flagged', `Marked ${selectedStudent.name}'s profile as unverified.`, 'info');
+                        setSelectedStudent(null);
+                        setStudentRemarkDraft('');
+                      }}
+                      className="py-2 px-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold text-center cursor-pointer transition-all flex items-center justify-center gap-1"
+                    >
+                      <i className="fa-solid fa-circle-xmark text-xs" /> Reject with Remark
+                    </button>
                   </div>
                 </div>
               )}

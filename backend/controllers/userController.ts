@@ -201,16 +201,43 @@ export const auditMatch = async (req: Request, res: Response) => {
       // Local matching logic
       const studentSkills = (student.skills || []).map(s => s.toLowerCase());
       const jobSkills = (listing.skills || []).map(s => s.toLowerCase());
+      const studentBio = (student.bio || '').toLowerCase();
 
+      // Check skills match
       const matchedSkills = jobSkills.filter(s => studentSkills.some(ss => ss.includes(s) || s.includes(ss)));
       const missingSkills = jobSkills.filter(s => !matchedSkills.includes(s));
 
-      const totalSkills = jobSkills.length || 1;
-      const matchPercentage = Math.round((matchedSkills.length / totalSkills) * 100);
+      // Check bio keywords match
+      const bioWords = studentBio.split(/\W+/);
+      const matchedBioSkills = jobSkills.filter(s => bioWords.includes(s));
 
+      // Base skill match calculation (up to 70%)
+      const skillsScore = jobSkills.length > 0 ? (matchedSkills.length / jobSkills.length) * 70 : 50;
+
+      // Bio suitability calculation (up to 20%)
+      const categoryMatch = studentBio.includes(listing.category.toLowerCase()) || studentBio.includes(listing.title.toLowerCase().split(' ')[0]);
+      const bioScore = (categoryMatch ? 10 : 0) + (matchedBioSkills.length > 0 ? 10 : 0);
+
+      // GPA suitability calculation (up to 10%)
       const studentGrades = (student.toObject() as any).grades || [];
       const hasGrades = studentGrades.length > 0;
       const lastGrade = hasGrades ? studentGrades[studentGrades.length - 1] : null;
+      let gpaScore = 5; // Default middle
+      if (lastGrade) {
+        const gpa = parseFloat(lastGrade.gpa);
+        if (gpa >= 8.5) gpaScore = 10;
+        else if (gpa >= 7.0) gpaScore = 8;
+        else if (gpa >= 5.0) gpaScore = 6;
+        else gpaScore = 3;
+      }
+
+      let matchPercentage = Math.round(skillsScore + bioScore + gpaScore);
+      if (matchPercentage > 100) matchPercentage = 100;
+      if (matchPercentage < 15) matchPercentage = 15; // Floor it
+
+      const bioCritique = categoryMatch
+        ? `- **Biography Match:** Your biography includes relevant references aligning with ${listing.category} placements.`
+        : `- **Biography Gap:** Your biography does not mention experience in ${listing.category} or ${listing.title} related areas. Add these to raise your score.`;
 
       const responseText = `### AI Audit Results for ${listing.title} at ${listing.company}
 
@@ -223,7 +250,7 @@ ${hasGrades ? `- Your latest academic performance (Semester GPA: ${lastGrade.gpa
 
 **Areas for Improvement & Recommended Updates:**
 ${missingSkills.length > 0 ? `- **Skills Gap:** Consider adding ${missingSkills.map(s => `\`${s}\``).join(', ')} to your credentials list.` : '- **Skills Match:** Excellent alignment with required technologies!'}
-- **Biography Polish:** Your biography does not highlight specific experience with ${listing.category} systems. We suggest updating your bio to detail projects matching the job description: *"${listing.description.substring(0, 100)}..."*
+${bioCritique}
 - **Certificates:** Uploading certifications related to ${listing.category} would significantly boost your visibility.
 
 **Recommended Biography Tailored to this Role:**
@@ -248,7 +275,16 @@ ${missingSkills.length > 0 ? `- **Skills Gap:** Consider adding ${missingSkills.
         messages: [
           {
             role: 'system',
-            content: 'You are an elite AI career advisor and placement auditor at Sir Padampat Singhania University (SPSU). Your task is to analyze the student\'s profile against the job placement listing and provide a constructive match audit. Use markdown format. Include a Match Score (%), list strong points, specify exact gaps in skills or bio content, and provide a short, tailored professional bio recommendation. Keep it concise, helpful, and highly professional.'
+            content: `You are an elite AI career advisor and placement auditor at Sir Padampat Singhania University (SPSU).
+Your task is to analyze the student's profile against the job placement listing and provide a constructive match audit.
+
+You MUST wrap the sections of your response in the following XML tags:
+1. <score>[a number from 0 to 100 representing suitability score based on biography, skills, and GPA]</score>
+2. <strong_points>[bullet points describing student's matched technical skills, relevant coursework/grades, or certs]</strong_points>
+3. <gaps>[bullet points describing gaps in skills, missing bio elements matching the job description, or recommended certificates]</gaps>
+4. <bio_recommendation>[a short, tailored professional bio recommendation for this specific role]</bio_recommendation>
+
+Be strict and objective with the score. Respond ONLY with these tagged sections. Do not include any other markdown header or conversational wrapper text outside these tags.`
           },
           {
             role: 'user',
@@ -276,15 +312,38 @@ Skills: ${JSON.stringify(listing.skills)}`
     }
 
     const data = await response.json();
-    const auditText = data.choices?.[0]?.message?.content?.trim();
+    const rawText = data.choices?.[0]?.message?.content?.trim() || "";
+
+    // Parse XML tags robustly
+    const scoreMatch = rawText.match(/<score>([\s\S]*?)<\/score>/i);
+    const strongMatch = rawText.match(/<strong_points>([\s\S]*?)<\/strong_points>/i);
+    const gapsMatch = rawText.match(/<gaps>([\s\S]*?)<\/gaps>/i);
+    const bioMatch = rawText.match(/<bio_recommendation>([\s\S]*?)<\/bio_recommendation>/i);
+
+    const matchScore = scoreMatch ? parseInt(scoreMatch[1].trim(), 10) : 75;
+    const strongPoints = strongMatch ? strongMatch[1].trim() : "";
+    const gaps = gapsMatch ? gapsMatch[1].trim() : "";
+    const bioRecommendation = bioMatch ? bioMatch[1].trim() : "";
+
+    // Generate backward compatible consolidated auditText
+    const auditText = `### Strong Points
+${strongPoints || 'None identified.'}
+
+### Gaps & Recommended Updates
+${gaps || 'None identified.'}
+
+### Recommended Biography
+${bioRecommendation || 'None suggested.'}`;
 
     return res.json({
       success: true,
       auditText,
-      matchScore: 75,
+      matchScore,
+      strongPoints,
+      gaps,
+      bioRecommendation,
       simulated: false
     });
-
   } catch (error: any) {
     return res.status(500).json({ error: error.message });
   }

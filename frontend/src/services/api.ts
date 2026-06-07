@@ -171,7 +171,15 @@ export const userService = {
     return res.json();
   },
 
-  auditMatch: async (userId: string, listingId: string): Promise<{ success: boolean; auditText: string; matchScore: number; simulated: boolean }> => {
+  auditMatch: async (userId: string, listingId: string): Promise<{ 
+    success: boolean; 
+    auditText: string; 
+    matchScore: number; 
+    simulated: boolean;
+    strongPoints?: string;
+    gaps?: string;
+    bioRecommendation?: string;
+  }> => {
     const res = await fetchWithAuth(`${API_BASE}/users/audit-match`, {
       method: 'POST',
       body: JSON.stringify({ userId, listingId })

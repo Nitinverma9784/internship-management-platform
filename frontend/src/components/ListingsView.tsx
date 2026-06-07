@@ -20,6 +20,169 @@ interface ListingsViewProps {
   onFacultyVerifyRecruiter?: (recruiterId: string, status: 'Genuine' | 'Not Genuine', reason?: string) => void;
 }
 
+const renderMarkdown = (text: string) => {
+  if (!text) return null;
+  const lines = text.split('\n');
+  const renderedElements: React.ReactNode[] = [];
+  
+  let currentSection: 'list' | 'paragraph' | 'none' = 'none';
+  const listItems: React.ReactNode[] = [];
+  
+  const flushList = (key: string | number) => {
+    if (listItems.length > 0) {
+      renderedElements.push(
+        <ul key={`ul-${key}`} className="list-disc pl-4 mb-2 text-slate-700 space-y-1 text-left list-outside">
+          {[...listItems]}
+        </ul>
+      );
+      listItems.length = 0;
+    }
+  };
+
+  const parseFormattedText = (str: string, keyPrefix: string): React.ReactNode[] => {
+    const boldParts = str.split(/\*\*([^*]+)\*\*/g);
+    return boldParts.flatMap((part, i) => {
+      const isBold = i % 2 === 1;
+      const codeParts = part.split(/`([^`]+)`/g);
+      const nodes = codeParts.map((subpart, j) => {
+        const isCode = j % 2 === 1;
+        if (isCode) {
+          return (
+            <code key={`${keyPrefix}-${i}-${j}`} className="bg-slate-100 text-purple-750 font-mono px-1 py-0.5 rounded text-[10px]">
+              {subpart}
+            </code>
+          );
+        }
+        return subpart;
+      });
+
+      if (isBold) {
+        return <strong key={`${keyPrefix}-bold-${i}`} className="font-bold text-slate-900">{nodes}</strong>;
+      }
+      return nodes;
+    });
+  };
+
+  const commonListSections = [
+    'strong points',
+    'gaps',
+    'areas for improvement',
+    'recommended updates',
+    'areas for improvement & recommended updates'
+  ];
+
+  const commonHeaders = [
+    'introduction',
+    'strong points',
+    'gaps',
+    'areas for improvement',
+    'recommended updates',
+    'tailored bio recommendation',
+    'biography recommendation',
+    'recommended biography tailored to this role',
+    'areas for improvement & recommended updates'
+  ];
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (trimmed === '') {
+      flushList(index);
+      currentSection = 'none';
+      renderedElements.push(<div key={`empty-${index}`} className="h-2" />);
+      return;
+    }
+
+    // Check if line is a header (either marked with # or matching common headers)
+    let isHeader = false;
+    let headerText = trimmed;
+    let headerLevel = 3; // default h4
+
+    if (trimmed.startsWith('# ')) {
+      isHeader = true;
+      headerText = trimmed.substring(2);
+      headerLevel = 1;
+    } else if (trimmed.startsWith('## ')) {
+      isHeader = true;
+      headerText = trimmed.substring(3);
+      headerLevel = 2;
+    } else if (trimmed.startsWith('### ')) {
+      isHeader = true;
+      headerText = trimmed.substring(4);
+      headerLevel = 3;
+    } else {
+      // Clean up common symbols to check if it matches a known header
+      const cleanLine = trimmed.replace(/^[#*\-\s:]+|[#*\-\s:]+$/g, '').trim();
+      if (commonHeaders.includes(cleanLine.toLowerCase())) {
+        isHeader = true;
+        headerText = cleanLine;
+        headerLevel = 3;
+      }
+    }
+
+    if (isHeader) {
+      flushList(index);
+      
+      const cleanHeaderText = headerText.replace(/:$/, '').trim(); // Remove trailing colon if present
+      const key = `header-${index}`;
+      
+      if (commonListSections.includes(cleanHeaderText.toLowerCase())) {
+        currentSection = 'list';
+      } else {
+        currentSection = 'paragraph';
+      }
+
+      if (headerLevel === 1) {
+        renderedElements.push(
+          <h2 key={key} className="text-base font-bold text-purple-950 mt-5 mb-1.5 text-left border-b border-purple-100 pb-0.5">
+            {parseFormattedText(cleanHeaderText, key)}
+          </h2>
+        );
+      } else if (headerLevel === 2) {
+        renderedElements.push(
+          <h3 key={key} className="text-sm font-semibold text-purple-950 mt-4 mb-1 border-b border-purple-100 pb-0.5 text-left">
+            {parseFormattedText(cleanHeaderText, key)}
+          </h3>
+        );
+      } else {
+        renderedElements.push(
+          <h4 key={key} className="text-xs font-mono font-bold text-purple-900 mt-3 mb-1 uppercase tracking-wide text-left">
+            {parseFormattedText(cleanHeaderText, key)}
+          </h4>
+        );
+      }
+      return;
+    }
+
+    // It's a regular content line. Check if it's a list item.
+    let isListItem = trimmed.startsWith('* ') || trimmed.startsWith('- ') || trimmed.startsWith('• ');
+    let itemText = trimmed;
+    if (isListItem) {
+      itemText = trimmed.replace(/^[*\-•\s]+/, '');
+    } else if (currentSection === 'list') {
+      isListItem = true;
+    }
+
+    const key = `line-${index}`;
+    if (isListItem) {
+      listItems.push(
+        <li key={`li-${index}`} className="text-xs text-slate-700 leading-relaxed text-left ml-1.5">
+          {parseFormattedText(itemText, key)}
+        </li>
+      );
+    } else {
+      flushList(index);
+      renderedElements.push(
+        <p key={key} className="text-xs text-slate-700 leading-relaxed mb-1.5 text-left">
+          {parseFormattedText(line, key)}
+        </p>
+      );
+    }
+  });
+
+  flushList('final');
+  return <div className="space-y-1 w-full font-sans">{renderedElements}</div>;
+};
+
 export default function ListingsView({
   currentRole,
   currentUser,
@@ -61,19 +224,32 @@ export default function ListingsView({
     }
     
     // Evaluate match score before permitting quick application
-    triggerToast('AI Auditing', 'Evaluating your qualifications for quick apply...', 'info');
-    try {
-      const data = await userService.auditMatch(currentUser.id, listing.id);
-      if (data.success && data.matchScore < 60) {
-        triggerToast(
-          'Application Blocked', 
-          `Your AI Match Score (${data.matchScore}%) is below the required 60% threshold. Please update your profile skills/bio first.`, 
-          'error'
-        );
-        return;
+    let score = aiMatchScore;
+    if (score === null) {
+      triggerToast('AI Auditing', 'Evaluating your qualifications for quick apply...', 'info');
+      try {
+        const data = await userService.auditMatch(currentUser.id, listing.id);
+        if (data.success) {
+          score = data.matchScore;
+          setAiMatchScore(data.matchScore);
+          setAiAuditResult(data.auditText);
+          setAiStrongPoints(data.strongPoints || null);
+          setAiGaps(data.gaps || null);
+          setAiBioRecommendation(data.bioRecommendation || null);
+          setHasCheckedEligibility(true);
+        }
+      } catch (err) {
+        console.error("Quick apply matching audit failed:", err);
       }
-    } catch (err) {
-      console.error("Quick apply matching audit failed:", err);
+    }
+    
+    if (score !== null && score < 60) {
+      triggerToast(
+        'Application Blocked', 
+        `Your AI Match Score (${score}%) is below the required 60% threshold. Please update your profile skills/bio first.`, 
+        'error'
+      );
+      return;
     }
     
     onApply(listing.id, "Applied via One-Click Quick Apply.", currentUser.resumeName);
@@ -88,34 +264,55 @@ export default function ListingsView({
   // AI Matching Audit states
   const [aiAuditResult, setAiAuditResult] = useState<string | null>(null);
   const [aiMatchScore, setAiMatchScore] = useState<number | null>(null);
+  const [aiStrongPoints, setAiStrongPoints] = useState<string | null>(null);
+  const [aiGaps, setAiGaps] = useState<string | null>(null);
+  const [aiBioRecommendation, setAiBioRecommendation] = useState<string | null>(null);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [hasCheckedEligibility, setHasCheckedEligibility] = useState(false);
 
   useEffect(() => {
-    if (isApplyModalOpen && selectedListing && currentUser) {
-      const runAudit = async () => {
-        setIsAuditing(true);
-        setAiAuditResult(null);
+    setHasCheckedEligibility(false);
+    setAiAuditResult(null);
+    setAiMatchScore(null);
+    setAiStrongPoints(null);
+    setAiGaps(null);
+    setAiBioRecommendation(null);
+  }, [selectedListing]);
+
+  const handleCopyBio = (text: string) => {
+    navigator.clipboard.writeText(text);
+    triggerToast('Bio Copied', 'Suggested biography copied to clipboard. Paste it in your Profile configurations!', 'success');
+  };
+
+  const handleRunEligibilityCheck = async () => {
+    if (!currentUser || !selectedListing) return;
+    setIsAuditing(true);
+    setAiAuditResult(null);
+    setAiMatchScore(null);
+    setAiStrongPoints(null);
+    setAiGaps(null);
+    setAiBioRecommendation(null);
+    try {
+      const data = await userService.auditMatch(currentUser.id, selectedListing.id);
+      if (data.success) {
+        setAiAuditResult(data.auditText);
+        setAiMatchScore(data.matchScore);
+        setAiStrongPoints(data.strongPoints || null);
+        setAiGaps(data.gaps || null);
+        setAiBioRecommendation(data.bioRecommendation || null);
+        setHasCheckedEligibility(true);
+      } else {
+        setAiAuditResult("AI Audit could not evaluate coordinates.");
         setAiMatchScore(null);
-        try {
-          const data = await userService.auditMatch(currentUser.id, selectedListing.id);
-          if (data.success) {
-            setAiAuditResult(data.auditText);
-            setAiMatchScore(data.matchScore);
-          } else {
-            setAiAuditResult("AI Audit could not evaluate coordinates.");
-            setAiMatchScore(null);
-          }
-        } catch (err) {
-          console.error("AI Audit error:", err);
-          setAiAuditResult("Connection to AI coordination engine interrupted.");
-          setAiMatchScore(null);
-        } finally {
-          setIsAuditing(false);
-        }
-      };
-      runAudit();
+      }
+    } catch (err) {
+      console.error("AI Audit error:", err);
+      setAiAuditResult("Connection to AI coordination engine interrupted.");
+      setAiMatchScore(null);
+    } finally {
+      setIsAuditing(false);
     }
-  }, [isApplyModalOpen, selectedListing, currentUser]);
+  };
 
   // Post New Listing Form State
   const [newTitle, setNewTitle] = useState('');
@@ -612,6 +809,127 @@ export default function ListingsView({
               </div>
             )}
 
+            {currentUser && currentRole === 'Student' && !hasApplied(selectedListing.id) && (
+              <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl text-left space-y-2.5">
+                <div className="flex items-center gap-2 text-purple-800 font-bold select-none text-[11px] uppercase tracking-wider font-mono">
+                  <i className="fa-solid fa-wand-magic-sparkles animate-pulse text-purple-650 text-xs" />
+                  <span>AI Placement Advisor (SPSU SmartMatch)</span>
+                </div>
+
+                {!hasCheckedEligibility && !isAuditing ? (
+                  <div className="py-4 flex flex-col items-center justify-center border border-purple-200 bg-white rounded-xl text-center space-y-2.5 p-3">
+                    <i className="fa-solid fa-wand-magic-sparkles text-xl text-purple-500 animate-bounce" />
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-bold text-slate-800">Run SPSU SmartMatch Eligibility Review</h4>
+                      <p className="text-[10px] text-slate-500 max-w-sm">
+                        AI will analyze your biography, technical skill-sets, GPAs, and certs against the listing requirements.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleRunEligibilityCheck}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                    >
+                      <i className="fa-solid fa-clipboard-question" />
+                      <span>Check Eligibility</span>
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {aiMatchScore !== null && (
+                      <div className="space-y-3 mt-1.5">
+                        {/* Score Banner */}
+                        <div className={`p-3 rounded-xl border flex items-center justify-between font-sans ${
+                          aiMatchScore >= 60
+                            ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800'
+                            : 'bg-rose-50/80 border-rose-200 text-rose-800'
+                        }`}>
+                          <div className="text-left">
+                            <span className="text-[9px] uppercase font-mono tracking-wider font-semibold text-slate-400 block">AI Match Score</span>
+                            <span className="text-[11px] font-sans font-semibold">
+                              {aiMatchScore >= 60 ? 'Placement Criteria Met ✓' : 'Threshold Score Deficit ✗'}
+                            </span>
+                          </div>
+                          <div className="text-right flex items-baseline gap-0.5">
+                            <span className="text-xl font-bold font-mono leading-none">{aiMatchScore}</span>
+                            <span className="text-[10px] font-bold font-mono text-slate-400">%</span>
+                          </div>
+                        </div>
+
+                        {/* Strong Points */}
+                        {aiStrongPoints && (
+                          <div className="p-3 bg-emerald-50/30 border border-emerald-100/70 rounded-xl text-left space-y-1">
+                            <h5 className="text-[9px] font-mono uppercase tracking-wider font-bold text-emerald-800 flex items-center gap-1">
+                              <i className="fa-solid fa-circle-check text-[10px]" />
+                              <span>Strong Assets</span>
+                            </h5>
+                            <div className="text-[11px] text-emerald-950 leading-relaxed pl-0.5">
+                              {renderMarkdown(aiStrongPoints)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Gaps */}
+                        {aiGaps && (
+                          <div className={`p-3 rounded-xl border text-left space-y-1 ${
+                            aiMatchScore >= 60 ? 'bg-amber-50/30 border-amber-100' : 'bg-rose-50/30 border-rose-100'
+                          }`}>
+                            <h5 className={`text-[9px] font-mono uppercase tracking-wider font-bold flex items-center gap-1 ${
+                              aiMatchScore >= 60 ? 'text-amber-800' : 'text-rose-800'
+                            }`}>
+                              <i className="fa-solid fa-triangle-exclamation text-[10px]" />
+                              <span>Identified Gaps & Critique</span>
+                            </h5>
+                            <div className={`text-[11px] leading-relaxed pl-0.5 ${
+                              aiMatchScore >= 60 ? 'text-amber-950' : 'text-rose-950'
+                            }`}>
+                              {renderMarkdown(aiGaps)}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Bio Recommendation */}
+                        {aiBioRecommendation && (
+                          <div className="p-3 bg-purple-50/30 border border-purple-100 rounded-xl text-left space-y-2 relative group">
+                            <div className="flex items-center justify-between select-none">
+                              <h5 className="text-[9px] font-mono uppercase tracking-wider font-bold text-purple-800 flex items-center gap-1">
+                                <i className="fa-solid fa-wand-magic-sparkles text-[10px]" />
+                                <span>Suggested Bio Tailoring</span>
+                              </h5>
+                              <button
+                                onClick={() => handleCopyBio(aiBioRecommendation)}
+                                className="px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-[9px] font-mono font-bold transition-all hover:scale-105 cursor-pointer flex items-center gap-1"
+                                title="Copy bio to clipboard"
+                              >
+                                <i className="fa-solid fa-copy text-[8px]" />
+                                <span>Copy</span>
+                              </button>
+                            </div>
+                            <div className="text-[11px] text-purple-955 leading-relaxed font-sans italic pl-1 border-l-2 border-purple-200 py-0.5 select-text">
+                              {aiBioRecommendation.replace(/^["']|["']$/g, '')}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Fallback to raw result if sections are not set */}
+                        {!aiStrongPoints && !aiGaps && aiAuditResult && (
+                          <div className="text-xs text-slate-700 leading-relaxed max-h-48 overflow-y-auto pr-1 select-text font-sans mt-2">
+                            {renderMarkdown(aiAuditResult)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {isAuditing && (
+                      <div className="flex items-center gap-2.5 py-3 text-slate-500 font-mono text-[10px] uppercase tracking-wider">
+                        <i className="fa-solid fa-spinner fa-spin text-purple-600 text-sm" />
+                        <span>Analyzing profile credentials...</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Primary Action Button (Apply Modal Trigger) */}
             <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row gap-2.5 items-center justify-between w-full select-none">
               {!currentUser ? (
@@ -634,26 +952,43 @@ export default function ListingsView({
                     <span>Application Submitted Successfully</span>
                   </button>
                 ) : (
-                  <>
-                    <button
-                      id="trigger-quick-apply-btn"
-                      onClick={() => handleQuickApply(selectedListing)}
-                      className="w-full sm:w-1/2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold text-center cursor-pointer shadow transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <i className="fa-solid fa-bolt text-xs animate-pulse" />
-                      One-Click Apply
-                    </button>
-                    <button
-                      id="trigger-apply-now-btn"
-                      onClick={() => {
-                        setIsApplyModalOpen(true);
-                        setApplyStep(1);
-                      }}
-                      className="w-full sm:w-1/2 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold text-center hover:bg-brand-600 cursor-pointer shadow transition-all flex items-center justify-center gap-1"
-                    >
-                      Standard Apply <i className="fa-solid fa-chevron-right text-[10px] ml-1" />
-                    </button>
-                  </>
+                  <div className="w-full flex flex-col gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2.5 items-center justify-between w-full">
+                      <button
+                        id="trigger-quick-apply-btn"
+                        disabled={!hasCheckedEligibility || aiMatchScore === null || aiMatchScore < 60}
+                        onClick={() => handleQuickApply(selectedListing)}
+                        className={`w-full sm:w-1/2 py-2.5 rounded-xl text-xs font-bold text-center cursor-pointer shadow transition-all flex items-center justify-center gap-1.5 ${
+                          !hasCheckedEligibility || aiMatchScore === null || aiMatchScore < 60
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
+                      >
+                        <i className="fa-solid fa-bolt text-xs animate-pulse" />
+                        One-Click Apply
+                      </button>
+                      <button
+                        id="trigger-apply-now-btn"
+                        disabled={!hasCheckedEligibility || aiMatchScore === null || aiMatchScore < 60}
+                        onClick={() => {
+                          setIsApplyModalOpen(true);
+                          setApplyStep(1);
+                        }}
+                        className={`w-full sm:w-1/2 py-2.5 rounded-xl text-xs font-bold text-center cursor-pointer shadow transition-all flex items-center justify-center gap-1 ${
+                          !hasCheckedEligibility || aiMatchScore === null || aiMatchScore < 60
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none'
+                            : 'bg-slate-900 hover:bg-brand-600 text-white'
+                        }`}
+                      >
+                        Standard Apply <i className="fa-solid fa-chevron-right text-[10px] ml-1" />
+                      </button>
+                    </div>
+                    {(!hasCheckedEligibility || aiMatchScore === null || aiMatchScore < 60) && (
+                      <p className="text-[10px] text-center text-slate-500 italic mt-1 w-full">
+                        Please verify your placement eligibility above to unlock apply options.
+                      </p>
+                    )}
+                  </div>
                 )
               ) : (
                 (currentRole === 'Admin' || (currentRole === 'Company' && currentUser?.companyName?.toLowerCase() === selectedListing.company.toLowerCase())) ? (
@@ -779,38 +1114,117 @@ export default function ListingsView({
                     <i className="fa-solid fa-wand-magic-sparkles animate-pulse text-purple-650 text-xs" />
                     <span>AI Placement Advisor (SPSU SmartMatch)</span>
                   </div>
-                  
-                  {aiMatchScore !== null && (
-                    <div className={`mt-2 p-2.5 rounded-xl border flex items-center justify-between text-xs font-sans ${
-                      aiMatchScore >= 60
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                        : 'bg-rose-50 border-rose-250 text-rose-800'
-                    }`}>
-                      <span className="font-semibold">AI Match Score:</span>
-                      <span className="font-bold text-sm">{aiMatchScore}%</span>
-                    </div>
-                  )}
 
-                  {aiMatchScore !== null && aiMatchScore < 60 && (
-                    <div className="p-3 bg-rose-100/60 border border-rose-200 text-rose-800 rounded-xl text-[11px] leading-relaxed mt-2 text-left font-sans font-medium">
-                      <i className="fa-solid fa-triangle-exclamation mr-1.5" />
-                      Your match score is below the 60% requirement. Please enhance your profile skills, bio, or semester GPAs to qualify for application.
-                    </div>
-                  )}
-
-                  {isAuditing ? (
-                    <div className="flex items-center gap-2.5 py-3 text-slate-500 font-mono text-[10px] uppercase tracking-wider">
-                      <i className="fa-solid fa-spinner fa-spin text-purple-600 text-sm" />
-                      <span>Analyzing profile credentials against requirements...</span>
-                    </div>
-                  ) : aiAuditResult ? (
-                    <div className="text-xs text-slate-700 leading-relaxed max-h-40 overflow-y-auto pr-1 select-text font-sans mt-3">
-                      <div className="whitespace-pre-line font-sans text-slate-750 font-medium">
-                        {aiAuditResult}
+                  {!hasCheckedEligibility && !isAuditing ? (
+                    <div className="py-6 flex flex-col items-center justify-center border border-purple-200 bg-white rounded-xl text-center space-y-3 p-4">
+                      <i className="fa-solid fa-wand-magic-sparkles text-2xl text-purple-500 animate-bounce" />
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-slate-800">Run SPSU SmartMatch Eligibility Review</h4>
+                        <p className="text-[10px] text-slate-500 max-w-sm">
+                          AI will analyze your biography, technical skill-sets, GPAs, and certs against the listing requirements.
+                        </p>
                       </div>
+                      <button
+                        onClick={handleRunEligibilityCheck}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                      >
+                        <i className="fa-solid fa-clipboard-question" />
+                        <span>Check Eligibility</span>
+                      </button>
                     </div>
                   ) : (
-                    <p className="text-[11px] text-slate-450 italic">Audit failed to initialize.</p>
+                    <>
+                      {aiMatchScore !== null && (
+                        <div className="space-y-3 mt-1.5">
+                          {/* Score Banner */}
+                          <div className={`p-3 rounded-xl border flex items-center justify-between font-sans ${
+                            aiMatchScore >= 60
+                              ? 'bg-emerald-50/80 border-emerald-200 text-emerald-805'
+                              : 'bg-rose-50/80 border-rose-200 text-rose-805'
+                          }`}>
+                            <div className="text-left">
+                              <span className="text-[9px] uppercase font-mono tracking-wider font-semibold text-slate-400 block">AI Match Score</span>
+                              <span className="text-[11px] font-sans font-semibold">
+                                {aiMatchScore >= 60 ? 'Placement Criteria Met ✓' : 'Threshold Score Deficit ✗'}
+                              </span>
+                            </div>
+                            <div className="text-right flex items-baseline gap-0.5">
+                              <span className="text-xl font-bold font-mono leading-none">{aiMatchScore}</span>
+                              <span className="text-[10px] font-bold font-mono text-slate-400">%</span>
+                            </div>
+                          </div>
+
+                          {/* Strong Points */}
+                          {aiStrongPoints && (
+                            <div className="p-3 bg-emerald-50/30 border border-emerald-100/70 rounded-xl text-left space-y-1">
+                              <h5 className="text-[9px] font-mono uppercase tracking-wider font-bold text-emerald-800 flex items-center gap-1">
+                                <i className="fa-solid fa-circle-check text-[10px]" />
+                                <span>Strong Assets</span>
+                              </h5>
+                              <div className="text-[11px] text-emerald-950 leading-relaxed pl-0.5">
+                                {renderMarkdown(aiStrongPoints)}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Gaps */}
+                          {aiGaps && (
+                            <div className={`p-3 rounded-xl border text-left space-y-1 ${
+                              aiMatchScore >= 60 ? 'bg-amber-50/30 border-amber-100' : 'bg-rose-50/30 border-rose-100'
+                            }`}>
+                              <h5 className={`text-[9px] font-mono uppercase tracking-wider font-bold flex items-center gap-1 ${
+                                aiMatchScore >= 60 ? 'text-amber-850' : 'text-rose-850'
+                              }`}>
+                                <i className="fa-solid fa-triangle-exclamation text-[10px]" />
+                                <span>Identified Gaps & Critique</span>
+                              </h5>
+                              <div className={`text-[11px] leading-relaxed pl-0.5 ${
+                                aiMatchScore >= 60 ? 'text-amber-950' : 'text-rose-950'
+                              }`}>
+                                {renderMarkdown(aiGaps)}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Bio Recommendation */}
+                          {aiBioRecommendation && (
+                            <div className="p-3 bg-purple-50/30 border border-purple-100 rounded-xl text-left space-y-2 relative group">
+                              <div className="flex items-center justify-between select-none">
+                                <h5 className="text-[9px] font-mono uppercase tracking-wider font-bold text-purple-800 flex items-center gap-1">
+                                  <i className="fa-solid fa-wand-magic-sparkles text-[10px]" />
+                                  <span>Suggested Bio Tailoring</span>
+                                </h5>
+                                <button
+                                  onClick={() => handleCopyBio(aiBioRecommendation)}
+                                  className="px-2 py-0.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded text-[9px] font-mono font-bold transition-all hover:scale-105 cursor-pointer flex items-center gap-1"
+                                  title="Copy bio to clipboard"
+                                >
+                                  <i className="fa-solid fa-copy text-[8px]" />
+                                  <span>Copy</span>
+                                </button>
+                              </div>
+                              <div className="text-[11px] text-purple-950 leading-relaxed font-sans italic pl-1 border-l-2 border-purple-200 py-0.5 select-text">
+                                {aiBioRecommendation.replace(/^["']|["']$/g, '')}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Fallback to raw result if sections are not set */}
+                          {!aiStrongPoints && !aiGaps && aiAuditResult && (
+                            <div className="text-xs text-slate-700 leading-relaxed max-h-48 overflow-y-auto pr-1 select-text font-sans mt-2">
+                              {renderMarkdown(aiAuditResult)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {isAuditing && (
+                        <div className="flex items-center gap-2.5 py-3 text-slate-550 font-mono text-[10px] uppercase tracking-wider">
+                          <i className="fa-solid fa-spinner fa-spin text-purple-650 text-sm" />
+                          <span>Analyzing profile credentials...</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -820,9 +1234,9 @@ export default function ListingsView({
                     rows={4}
                     value={coverLetterText}
                     onChange={(e) => setCoverLetterText(e.target.value)}
-                    placeholder="Briefly pitch why your skills, projects and goals fit Stripe's requirements..."
+                    placeholder="Briefly pitch why your skills, projects and goals fit required credentials..."
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-sans resize-none"
-                    disabled={aiMatchScore !== null && aiMatchScore < 60}
+                    disabled={!hasCheckedEligibility || (aiMatchScore !== null && aiMatchScore < 60)}
                   />
                   <p className="text-[10px] text-slate-450">A professional cover pitch makes recruiters review your dossier 60% faster.</p>
                 </div>
@@ -835,10 +1249,10 @@ export default function ListingsView({
                     Back
                   </button>
                   <button
-                    disabled={isAuditing || aiMatchScore === null || aiMatchScore < 60}
+                    disabled={isAuditing || !hasCheckedEligibility || aiMatchScore === null || aiMatchScore < 60}
                     onClick={() => setApplyStep(3)}
                     className={`px-5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                      isAuditing || aiMatchScore === null || aiMatchScore < 60
+                      isAuditing || !hasCheckedEligibility || aiMatchScore === null || aiMatchScore < 60
                         ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
                         : 'bg-slate-900 hover:bg-brand-600 text-white cursor-pointer shadow-sm'
                     }`}

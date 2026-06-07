@@ -9,7 +9,7 @@ export interface UserProfile {
   recruiterVerificationStatus?: 'Pending' | 'Genuine' | 'Not Genuine';
   recruiterVerificationReason?: string;
   recruiterVerifiedBy?: string;
-  studentProfileVerificationStatus?: 'Verified' | 'Unverified';
+  studentProfileVerificationStatus?: 'Pending' | 'Verified' | 'Unverified';
   studentProfileVerificationRemark?: string;
   studentProfileVerifiedBy?: string;
   avatarUrl?: string; // or initials

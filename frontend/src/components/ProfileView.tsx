@@ -143,10 +143,17 @@ export default function ProfileView({
     const formData = new FormData();
     formData.append('avatar', file);
 
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     try {
       triggerToast('Uploading Photo', 'Sending avatar to secure Cloudinary servers...', 'info');
       const response = await fetch('http://localhost:5000/api/users/upload-avatar', {
         method: 'POST',
+        headers,
         body: formData
       });
       const data = await response.json();
@@ -171,12 +178,18 @@ export default function ProfileView({
     setIsEnhancing(true);
     triggerToast('AI Enhancing', 'Polishing biography via Groq artificial intelligence...', 'info');
 
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     try {
       const response = await fetch('http://localhost:5000/api/users/enhance-bio', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({ bio })
       });
       const data = await response.json();
@@ -249,7 +262,9 @@ export default function ProfileView({
       linkedinUrl,
       xUrl,
       grades,
-      certificates
+      certificates,
+      studentProfileVerificationStatus: currentUser.role === 'Student' ? 'Pending' : currentUser.studentProfileVerificationStatus,
+      studentProfileVerificationRemark: currentUser.role === 'Student' ? '' : currentUser.studentProfileVerificationRemark
     };
 
     onUpdateProfile(updated);
@@ -272,6 +287,51 @@ export default function ProfileView({
           Maintain your portfolios, credential skill-sets, and attach live PDF resumes for automatic placement submissions.
         </p>
       </div>
+
+      {/* Verification Status Banner */}
+      {currentUser.role === 'Student' && (
+        <div className="text-left font-sans">
+          {currentUser.studentProfileVerificationStatus === 'Verified' ? (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl flex items-start gap-3 shadow-xs">
+              <i className="fa-solid fa-circle-check text-emerald-600 text-lg mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold font-mono uppercase tracking-wider text-emerald-700">Profile Verified</h4>
+                <p className="text-xs text-emerald-655 mt-1 leading-relaxed">
+                  Your academic placement credentials have been vetted and verified by Faculty coordinators. You are fully eligible to apply for internship placement opportunities!
+                </p>
+                {currentUser.studentProfileVerifiedBy && (
+                  <p className="text-[10px] text-emerald-500 font-mono mt-1">Verified by: {currentUser.studentProfileVerifiedBy}</p>
+                )}
+              </div>
+            </div>
+          ) : currentUser.studentProfileVerificationStatus === 'Unverified' ? (
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-start gap-3 shadow-xs">
+              <i className="fa-solid fa-triangle-exclamation text-rose-600 text-lg mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-xs font-bold font-mono uppercase tracking-wider text-rose-700">Profile Vetting Flagged</h4>
+                <p className="text-xs text-rose-655 mt-1 leading-relaxed">
+                  Your profile verification was flagged/rejected by the placement coordinators. Please review the feedback remark, correct your details, and save your changes to resubmit for verification.
+                </p>
+                {currentUser.studentProfileVerificationRemark && (
+                  <div className="mt-2.5 p-3 bg-white border border-rose-100 rounded-lg text-rose-900 text-xs italic font-medium">
+                    Feedback Remark: &ldquo;{currentUser.studentProfileVerificationRemark}&rdquo;
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl flex items-start gap-3 shadow-xs">
+              <i className="fa-solid fa-circle-notch fa-spin text-amber-600 text-lg mt-0.5" />
+              <div>
+                <h4 className="text-xs font-bold font-mono uppercase tracking-wider text-amber-700">Awaiting Verification Review</h4>
+                <p className="text-xs text-amber-655 mt-1 leading-relaxed">
+                  Your profile coordinates are currently pending vetting compliance check. You will be able to apply to internships once Faculty approves your credentials.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
         

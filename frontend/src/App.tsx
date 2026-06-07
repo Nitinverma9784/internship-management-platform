@@ -71,7 +71,7 @@ export default function App() {
       const companyRecruiters = allUsers.filter(
         (u) => u.role === 'Company' && (u.companyName || '').toLowerCase() === listing.company.toLowerCase()
       );
-      const hasGenuineRecruiter = companyRecruiters.some((u) => u.recruiterVerificationStatus === 'Genuine');
+      const hasGenuineRecruiter = companyRecruiters.length === 0 || companyRecruiters.some((u) => u.recruiterVerificationStatus !== 'Not Genuine');
       return (
         !nonGenuineCompanySet.has(listing.company.toLowerCase()) &&
         (listing.facultyApprovalStatus || 'Pending') === 'Verified' &&
@@ -533,7 +533,7 @@ export default function App() {
 
   const handleFacultyVerifyStudentProfile = async (
     studentId: string,
-    studentProfileVerificationStatus: 'Verified' | 'Unverified',
+    studentProfileVerificationStatus: 'Pending' | 'Verified' | 'Unverified',
     studentProfileVerificationRemark?: string
   ) => {
     if (!currentUser) return;
