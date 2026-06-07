@@ -83,3 +83,23 @@ export const uploadResumePdf = async (req: Request, res: Response) => {
     return res.status(500).json({ error: error.message });
   }
 };
+
+export const verifyApplication = async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { facultyVerificationStatus, facultyUnverifiedReason } = req.body;
+    
+    const updateObj: any = { 
+      facultyVerificationStatus,
+      facultyUnverifiedReason: facultyVerificationStatus === 'Unverified' ? (facultyUnverifiedReason || '') : '',
+      facultyVerifiedBy: req.user ? req.user.name : 'Faculty Coordinator',
+      facultyVerifiedAt: new Date().toISOString()
+    };
+
+    const updated = await ApplicationModel.findOneAndUpdate({ id }, updateObj, { new: true });
+    if (!updated) return res.status(404).json({ error: 'Application not found' });
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};

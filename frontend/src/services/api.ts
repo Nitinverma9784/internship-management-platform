@@ -30,15 +30,7 @@ export const authService = {
     return res.json();
   },
 
-  simulate: async (roleType: 'admin' | 'company' | 'faculty'): Promise<{ token: string; user: UserProfile }> => {
-    const res = await fetch(`${API_BASE}/auth/simulate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roleType })
-    });
-    if (!res.ok) throw new Error('Simulation endpoint failed.');
-    return res.json();
-  }
+  // Simulation endpoint deleted
 };
 
 export const internshipService = {
@@ -176,6 +168,24 @@ export const userService = {
       body: JSON.stringify({ role, companyName })
     });
     if (!res.ok) throw new Error('Role rewrite rejected.');
+    return res.json();
+  },
+
+  auditMatch: async (userId: string, listingId: string): Promise<{ success: boolean; auditText: string; matchScore: number; simulated: boolean }> => {
+    const res = await fetchWithAuth(`${API_BASE}/users/audit-match`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, listingId })
+    });
+    if (!res.ok) throw new Error('AI placement match audit failed.');
+    return res.json();
+  },
+
+  chat: async (message: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<{ success: boolean; reply: string; simulated: boolean }> => {
+    const res = await fetchWithAuth(`${API_BASE}/users/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ message, history })
+    });
+    if (!res.ok) throw new Error('AI career advisor connection failed.');
     return res.json();
   }
 };

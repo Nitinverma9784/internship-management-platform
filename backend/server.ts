@@ -42,10 +42,43 @@ async function clearHardcodedCollections() {
   }
 }
 
+async function seedAdminUser() {
+  try {
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    // Find if there is any user with Admin role
+    const adminUser = await UserProfileModel.findOne({ role: 'Admin' });
+    if (adminUser) {
+      // Ensure the credentials match the requested ones
+      adminUser.email = 'admin@spsu.ac.in';
+      adminUser.password = hashedPassword;
+      adminUser.name = 'SPSU Administrator';
+      adminUser.college = 'Sir Padampat Singhania University';
+      await adminUser.save();
+      console.log('Updated existing Admin user credentials to: admin@spsu.ac.in / admin123');
+    } else {
+      // Seed a brand new admin user
+      const seedAdmin = new UserProfileModel({
+        id: 'admin-seed-101',
+        name: 'SPSU Administrator',
+        email: 'admin@spsu.ac.in',
+        password: hashedPassword,
+        role: 'Admin',
+        college: 'Sir Padampat Singhania University',
+        bio: 'Default System Administrator for Sir Padampat Singhania University Placement Platform.'
+      });
+      await seedAdmin.save();
+      console.log('Seeded brand new default Admin user successfully: admin@spsu.ac.in / admin123');
+    }
+  } catch (error) {
+    console.error('Error seeding admin user:', error);
+  }
+}
+
 // Connect to MongoDB and clear old collections
 connectDB()
   .then(async () => {
     await clearHardcodedCollections();
+    await seedAdminUser();
     app.listen(PORT, () => {
       console.log(`Backend server is running on port ${PORT}`);
     });

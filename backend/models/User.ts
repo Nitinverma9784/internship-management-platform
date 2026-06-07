@@ -31,7 +31,23 @@ const UserProfileSchema = new Schema({
   portfolioUrl: { type: String, default: '' },
   githubUrl: { type: String, default: '' },
   linkedinUrl: { type: String, default: '' },
-  xUrl: { type: String, default: '' }
+  xUrl: { type: String, default: '' },
+  grades: {
+    type: [{
+      semester: { type: String, required: true },
+      gpa: { type: String, required: true }
+    }],
+    default: []
+  },
+  certificates: {
+    type: [{
+      name: { type: String, required: true },
+      issuer: { type: String, required: true },
+      date: { type: String, required: true },
+      credentialUrl: { type: String, default: '' }
+    }],
+    default: []
+  }
 }, { timestamps: true });
 
 export const UserProfileModel = mongoose.model('UserProfile', UserProfileSchema);

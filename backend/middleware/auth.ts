@@ -45,3 +45,19 @@ export const companyMiddleware = (req: AuthenticatedRequest, res: Response, next
     res.status(403).json({ error: 'Recruiter or Administrative privileges required.' });
   }
 };
+
+export const studentMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (req.user && (req.user.role === 'Student' || req.user.role === 'Admin')) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Student or Administrative privileges required.' });
+  }
+};
+
+export const facultyMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (req.user && (req.user.role === 'Faculty' || req.user.role === 'Admin')) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Faculty or Administrative privileges required.' });
+  }
+};

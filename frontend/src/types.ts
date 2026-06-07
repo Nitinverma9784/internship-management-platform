@@ -23,6 +23,8 @@ export interface UserProfile {
   githubUrl?: string;
   linkedinUrl?: string;
   xUrl?: string;
+  grades?: { semester: string; gpa: string }[];
+  certificates?: { name: string; issuer: string; date: string; credentialUrl?: string }[];
 }
 
 export interface Internship {

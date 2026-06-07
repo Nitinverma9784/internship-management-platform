@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, RefreshCw, KeyRound, ArrowRight } from 'lucide-react';
+import { Routes, Route, Navigate, useNavigate, useLocation, Outlet } from 'react-router-dom';
 
 // Custom Sub-components
 import Sidebar from './components/Sidebar';
@@ -11,7 +11,8 @@ import ProfileView from './components/ProfileView';
 import MessagesView from './components/MessagesView';
 import AdminView from './components/AdminView';
 import ToastList from './components/Toast';
-import RoleSimulator from './components/RoleSimulator';
+import RoleGuard from './components/RoleGuard';
+import CareerAdvisorChatbot from './components/CareerAdvisorChatbot';
 
 // API Services Layer
 import {
@@ -30,6 +31,9 @@ import AuthView from './components/AuthView';
 import { UserRole, UserProfile, Internship, Application, Message, ActivityLog, ToastMessage } from './types';
 
 export default function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // API Endpoint Base URL
   const API_BASE = 'http://localhost:5000/api';
 
@@ -39,9 +43,6 @@ export default function App() {
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
 
   // Navigation State
-  const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null);
-  const [isBrowsing, setIsBrowsing] = useState<boolean>(false);
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [listingsFilter, setListingsFilter] = useState<string>('all');
 
@@ -142,17 +143,51 @@ export default function App() {
         activityService.getAll()
       ]);
 
-      setAllUsers(users);
+      setAllUsers((prev) => {
+        if (JSON.stringify(prev) !== JSON.stringify(users)) {
+          return users;
+        }
+        return prev;
+      });
+
       if (currentUser) {
         const refreshedCurrentUser = users.find((u: UserProfile) => u.id === currentUser.id);
         if (refreshedCurrentUser) {
-          setCurrentUser(refreshedCurrentUser);
-          setCurrentRole(refreshedCurrentUser.role);
+          setCurrentUser((prev) => {
+            if (!prev || JSON.stringify(prev) !== JSON.stringify(refreshedCurrentUser)) {
+              return refreshedCurrentUser;
+            }
+            return prev;
+          });
+          setCurrentRole((prev) => {
+            if (prev !== refreshedCurrentUser.role) {
+              return refreshedCurrentUser.role;
+            }
+            return prev;
+          });
         }
       }
-      setApplications(applications);
-      setMessages(messages);
-      setActivityLogs(logs);
+
+      setApplications((prev) => {
+        if (JSON.stringify(prev) !== JSON.stringify(applications)) {
+          return applications;
+        }
+        return prev;
+      });
+
+      setMessages((prev) => {
+        if (JSON.stringify(prev) !== JSON.stringify(messages)) {
+          return messages;
+        }
+        return prev;
+      });
+
+      setActivityLogs((prev) => {
+        if (JSON.stringify(prev) !== JSON.stringify(logs)) {
+          return logs;
+        }
+        return prev;
+      });
     } catch (err) {
       console.error('Error fetching authenticated datasets:', err);
     }
@@ -185,9 +220,6 @@ export default function App() {
     localStorage.setItem('token', token);
     setCurrentUser(user);
     setCurrentRole(user.role);
-    setAuthMode(null);
-    setIsBrowsing(false);
-    setCurrentTab('dashboard');
     setLoading(true);
     
     // Fetch newly authorized user collections
@@ -195,6 +227,10 @@ export default function App() {
     setLoading(false);
     
     triggerToast('Welcome Back', `Successfully signed in as ${user.name}.`, 'success');
+    
+    // Redirect based on role
+    const targetTab = user.role === 'Admin' ? 'panel' : 'dashboard';
+    navigate(`/${user.role.toLowerCase()}/${targetTab}`, { replace: true });
   };
 
   // Clear session token and reset React states
@@ -206,22 +242,11 @@ export default function App() {
     setApplications([]);
     setMessages([]);
     setActivityLogs([]);
-    setCurrentTab('dashboard');
-    setIsBrowsing(false);
-    setAuthMode(null);
     triggerToast('Logged Out', 'You have securely signed out of your portal.', 'info');
+    navigate('/', { replace: true });
   };
 
-  // Perform simulated role switcher sign-in
-  const handleSimulateLogin = async (roleType: 'admin' | 'company' | 'faculty') => {
-    try {
-      const data = await authService.simulate(roleType);
-      await handleAuthSuccess(data.token, data.user);
-    } catch (err) {
-      triggerToast('Simulation Error', 'Failed to initialize simulated role session.', 'error');
-      throw err;
-    }
-  };
+  // Simulated login helper removed
 
   // Add listing (Recruiter flow)
   const handleAddListing = async (newListing: Internship) => {
@@ -306,18 +331,18 @@ export default function App() {
 
   // Apply to internship (Student flow)
   const handleApply = async (internshipId: string, coverLetter: string, resumeName: string) => {
+    if (!currentUser) {
+      triggerToast('Sign In Required', 'Please register or log into your account to submit applications.', 'info');
+      navigate('/login');
+      return;
+    }
+
     if (currentUser.role === 'Student' && currentUser.studentProfileVerificationStatus !== 'Verified') {
       triggerToast(
         'Profile Verification Needed',
         'Faculty must verify your student profile before you can apply.',
         'error'
       );
-      return;
-    }
-
-    if (!currentUser) {
-      triggerToast('Sign In Required', 'Please register or log into your account to submit applications.', 'info');
-      setAuthMode('login');
       return;
     }
     
@@ -423,7 +448,7 @@ export default function App() {
           newStatus === 'Offer' 
             ? `Congratulations! A formal offer letter has been uploaded to your Applications Tracker dashboard. Please review terms and details at your earliest convenience.` 
             : `Please monitor your core dashboard or message inbox for additional dialogue steps.`
-        }\n\nBest of luck,\nIncipio University Recruiting Office`,
+        }\n\nBest of luck,\nPlacera University Career Office`,
         timestamp: 'Just now',
         read: false,
         internshipId: matchApp.internshipId,
@@ -609,9 +634,9 @@ export default function App() {
   };
 
   // Invite Dynamic simulated actors (Admin flow)
-  const handleInviteUser = async (newUser: UserProfile) => {
+  const handleInviteUser = async (newUser: UserProfile & { password?: string }) => {
     try {
-      const saved = await userService.invite(newUser);
+      const saved = await userService.invite(newUser as UserProfile);
       setAllUsers((prev) => [...prev, saved]);
       triggerToast('Academic Invited', `Successfully added coordinator/student ${newUser.name}.`, 'success');
     } catch (err) {
@@ -654,142 +679,139 @@ export default function App() {
   const handleCloseToast = (id: string) => {
     setToasts((prev) => prev.filter(t => t.id !== id));
   };
-
   // Full-screen loading spinner
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-page-bg space-y-4">
-        <RefreshCw className="animate-spin text-editorial-light" size={40} />
-        <p className="text-xs font-mono tracking-widest text-[#94A3B8] uppercase">Loading Portal Database...</p>
+      <div className="flex flex-col items-center justify-center h-screen bg-page-bg space-y-4 select-none">
+        <i className="fa-solid fa-spinner fa-spin text-brand-600 text-3xl" />
+        <p className="text-xs font-mono tracking-widest text-slate-400 uppercase">Loading Portal Database...</p>
       </div>
     );
   }
 
-  // GUEST STATE ROUTING
+  // Guest State Route Switcher
   if (!currentUser) {
-    if (authMode) {
-      return (
-        <>
-          <AuthView 
-            initialMode={authMode} 
-            onAuthSuccess={handleAuthSuccess} 
-            onBackToLanding={() => setAuthMode(null)} 
-          />
-          <RoleSimulator 
-            currentRole={currentRole}
-            currentUser={currentUser}
-            onSimulateLogin={handleSimulateLogin}
-            onLogout={handleLogout}
-          />
-        </>
-      );
-    }
-    
-    if (isBrowsing) {
-      return (
-        <div className="flex flex-col h-screen bg-page-bg font-sans max-w-[100vw] text-text-main antialiased relative">
-          {/* Guest browsing top bar header */}
-          <header className="h-16 bg-white border-b border-[#F1F0EC] px-6 flex items-center justify-between select-none">
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setIsBrowsing(false)}
-                className="text-xs font-semibold text-editorial hover:underline cursor-pointer"
-              >
-                Go Back to Home
-              </button>
-              <span className="h-4 w-px bg-cream-accent mx-2" />
-              <span className="text-[10px] font-mono tracking-widest text-[#64748B] bg-[#F9F8F6] px-2 py-0.5 rounded border border-[#E5E2DE] uppercase">
-                Guest Board (Read-only)
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setAuthMode('login')}
-                className="text-xs font-semibold text-editorial hover:underline px-3 py-1.5 cursor-pointer"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => setAuthMode('register')}
-                className="px-3.5 py-1.5 bg-editorial text-white hover:bg-editorial-light rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
-              >
-                Register to Apply
-              </button>
-            </div>
-          </header>
-
-          <main className="flex-1 overflow-y-auto px-6 py-8">
-            <div className="max-w-7xl mx-auto space-y-8">
-              <div className="p-4 bg-brand-50 border border-brand-100 rounded-2xl flex items-center justify-between text-left">
-                <p className="text-xs text-editorial-light font-medium">
-                  <strong>Guest Mode enabled</strong>: You can explore and research active internships opportunity grids. Set up an account or log in to submit your verified dossiers.
-                </p>
-              </div>
-
-              <ListingsView
-                currentRole="Student"
-                currentUser={null}
-                internships={studentVisibleInternships}
-                applications={[]}
-                allUsers={[]}
-                onAddListing={() => {}}
-                onApply={() => {}}
-                triggerToast={triggerToast}
-                listingsFilter={listingsFilter}
-                setListingsFilter={setListingsFilter}
-                onPromptAuth={() => setAuthMode('login')}
-                onDeleteListing={() => {}}
-                onFacultyReviewListing={() => {}}
-                onFacultyVerifyRecruiter={() => {}}
-              />
-            </div>
-          </main>
-          
-          <ToastList toasts={toasts} onCloseToast={handleCloseToast} />
-          <RoleSimulator 
-            currentRole={currentRole}
-            currentUser={currentUser}
-            onSimulateLogin={handleSimulateLogin}
-            onLogout={handleLogout}
-          />
-        </div>
-      );
-    }
-
     return (
-      <>
-        <LandingView 
-          onBrowseListings={() => setIsBrowsing(true)} 
-          onStartAuth={(mode) => setAuthMode(mode)} 
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <LandingView
+              onBrowseListings={() => navigate('/guest')}
+              onStartAuth={(mode) => navigate(mode === 'login' ? '/login' : '/register')}
+            />
+          }
         />
-        <RoleSimulator 
-          currentRole={currentRole}
-          currentUser={currentUser}
-          onSimulateLogin={handleSimulateLogin}
-          onLogout={handleLogout}
+        <Route
+          path="/login"
+          element={
+            <AuthView
+              initialMode="login"
+              onAuthSuccess={handleAuthSuccess}
+              onBackToLanding={() => navigate('/')}
+            />
+          }
         />
-      </>
+        <Route
+          path="/register"
+          element={
+            <AuthView
+              initialMode="register"
+              onAuthSuccess={handleAuthSuccess}
+              onBackToLanding={() => navigate('/')}
+            />
+          }
+        />
+        <Route
+          path="/guest"
+          element={
+            <div className="flex flex-col h-screen bg-page-bg font-sans max-w-[100vw] text-text-main antialiased relative">
+              <header className="h-16 bg-white border-b border-brand-100 px-6 flex items-center justify-between select-none font-sans">
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => navigate('/')}
+                    className="text-xs font-semibold text-editorial hover:underline cursor-pointer"
+                  >
+                    Go Back to Home
+                  </button>
+                  <span className="h-4 w-px bg-cream-accent mx-2" />
+                  <span className="text-[10px] font-mono tracking-widest text-[#64748B] bg-brand-50 px-2 py-0.5 rounded border border-brand-100 uppercase font-bold">
+                    Guest Board (Read-only)
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => navigate('/login')}
+                    className="text-xs font-semibold text-editorial hover:underline px-3 py-1.5 cursor-pointer"
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    onClick={() => navigate('/register')}
+                    className="px-3.5 py-1.5 bg-editorial text-white hover:bg-editorial-light rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  >
+                    Register to Apply
+                  </button>
+                </div>
+              </header>
+
+              <main className="flex-1 overflow-y-auto px-6 py-8">
+                <div className="max-w-7xl mx-auto space-y-8">
+                  <div className="p-4 bg-brand-50 border border-brand-100 rounded-2xl flex items-center justify-between text-left select-none">
+                    <p className="text-xs text-brand-600 font-medium">
+                      <strong>Guest Mode enabled</strong>: You can explore and research active placements opportunity grids. Set up an account or log in to submit your verified dossiers.
+                    </p>
+                  </div>
+
+                  <ListingsView
+                    currentRole="Student"
+                    currentUser={null}
+                    internships={studentVisibleInternships}
+                    applications={[]}
+                    allUsers={[]}
+                    onAddListing={() => {}}
+                    onApply={() => {}}
+                    triggerToast={triggerToast}
+                    listingsFilter={listingsFilter}
+                    setListingsFilter={setListingsFilter}
+                    onPromptAuth={() => navigate('/login')}
+                    onDeleteListing={() => {}}
+                    onFacultyReviewListing={() => {}}
+                    onFacultyVerifyRecruiter={() => {}}
+                  />
+                </div>
+              </main>
+              
+              <ToastList toasts={toasts} onCloseToast={handleCloseToast} />
+            </div>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     );
   }
 
-  // AUTHENTICATED USER ENVIRONMENT
+  // Authenticated State View Framework
+  const pathSegments = location.pathname.split('/');
+  const rawTab = pathSegments[pathSegments.length - 1];
+  const currentTab = rawTab === 'panel' ? 'admin' : rawTab;
+
+  const handleTabChange = (tab: string) => {
+    const targetPath = tab === 'admin' ? 'panel' : tab;
+    navigate(`/${currentRole.toLowerCase()}/${targetPath}`);
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-page-bg font-sans max-w-[100vw] text-text-main antialiased relative">
-      
-      {/* Collapsible Sidebar */}
       <Sidebar
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={handleTabChange}
         collapsed={sidebarCollapsed}
         setCollapsed={setSidebarCollapsed}
         currentRole={currentRole}
       />
-
-      {/* Main Right panel container */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        
-        {/* Top bar controls */}
         <TopBar
           currentRole={currentRole}
           currentUser={currentUser}
@@ -797,134 +819,55 @@ export default function App() {
           unreceivedCount={unreadMessagesCount}
           triggerToast={triggerToast}
         />
-
-        {/* Content Container (Scrollable) */}
         <main className="flex-1 overflow-y-auto px-6 py-8" id="primary-main-scroll-view">
           <div className="max-w-7xl mx-auto space-y-8 select-text">
-            
-            {/* COMPONENT VIEWS DISPATCHER WITH ACCORDANCE PRIVILEGES */}
-            {currentTab === 'dashboard' && (
-              <DashboardView
-                currentRole={currentRole}
-                currentUser={currentUser}
-                internships={currentRole === 'Student' ? studentVisibleInternships : internships}
-                applications={applications}
-                activityLogs={activityLogs}
-                setCurrentTab={setCurrentTab}
-                setListingsFilter={setListingsFilter}
-                triggerToast={triggerToast}
-              />
-            )}
+            <Routes>
+              {/* Student Protected Routes */}
+              <Route path="/student/dashboard" element={<RoleGuard currentUser={currentUser} allowedRoles={['Student']}><DashboardView currentRole={currentRole} currentUser={currentUser} internships={studentVisibleInternships} applications={applications} activityLogs={activityLogs} setCurrentTab={(tab) => navigate(`/student/${tab === 'admin' ? 'panel' : tab}`)} setListingsFilter={setListingsFilter} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/student/listings" element={<RoleGuard currentUser={currentUser} allowedRoles={['Student']}><ListingsView currentRole={currentRole} currentUser={currentUser} internships={studentVisibleInternships} applications={applications} allUsers={allUsers} onAddListing={handleAddListing} onApply={handleApply} triggerToast={triggerToast} listingsFilter={listingsFilter} setListingsFilter={setListingsFilter} onDeleteListing={handleDeleteListing} onFacultyReviewListing={handleFacultyReviewListing} onFacultyVerifyRecruiter={handleRecruiterVerification} /></RoleGuard>} />
+              <Route path="/student/tracker" element={<RoleGuard currentUser={currentUser} allowedRoles={['Student']}><TrackerView currentRole={currentRole} currentUser={currentUser} applications={applications} internships={studentVisibleInternships} allUsers={studentVisibleUsers} onUpdateStatus={handleUpdateStatus} onFacultyVerifyApplication={handleFacultyVerification} onFacultyVerifyRecruiter={handleRecruiterVerification} onFacultyVerifyStudentProfile={handleFacultyVerifyStudentProfile} onFacultyReviewListing={handleFacultyReviewListing} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/student/profile" element={<RoleGuard currentUser={currentUser} allowedRoles={['Student']}><ProfileView currentUser={currentUser} onUpdateProfile={handleUpdateProfile} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/student/messages" element={<RoleGuard currentUser={currentUser} allowedRoles={['Student']}><MessagesView currentRole={currentRole} currentUser={currentUser} messages={studentVisibleMessages} allUsers={studentVisibleUsers} applications={applications} internships={studentVisibleInternships} onSendMessage={handleSendMessage} onMarkRead={handleMarkRead} triggerToast={triggerToast} /></RoleGuard>} />
 
-            {currentTab === 'listings' && (
-              <ListingsView
-                currentRole={currentRole}
-                currentUser={currentUser}
-                internships={currentRole === 'Student' ? studentVisibleInternships : internships}
-                applications={applications}
-                allUsers={allUsers}
-                onAddListing={handleAddListing}
-                onApply={handleApply}
-                triggerToast={triggerToast}
-                listingsFilter={listingsFilter}
-                setListingsFilter={setListingsFilter}
-                onDeleteListing={handleDeleteListing}
-                onFacultyReviewListing={handleFacultyReviewListing}
-                onFacultyVerifyRecruiter={handleRecruiterVerification}
-              />
-            )}
+              {/* Admin Protected Routes */}
+              <Route path="/admin/dashboard" element={<RoleGuard currentUser={currentUser} allowedRoles={['Admin']}><DashboardView currentRole={currentRole} currentUser={currentUser} internships={internships} applications={applications} activityLogs={activityLogs} setCurrentTab={(tab) => navigate(`/admin/${tab === 'admin' ? 'panel' : tab}`)} setListingsFilter={setListingsFilter} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/admin/listings" element={<RoleGuard currentUser={currentUser} allowedRoles={['Admin']}><ListingsView currentRole={currentRole} currentUser={currentUser} internships={internships} applications={applications} allUsers={allUsers} onAddListing={handleAddListing} onApply={handleApply} triggerToast={triggerToast} listingsFilter={listingsFilter} setListingsFilter={setListingsFilter} onDeleteListing={handleDeleteListing} onFacultyReviewListing={handleFacultyReviewListing} onFacultyVerifyRecruiter={handleRecruiterVerification} /></RoleGuard>} />
+              <Route path="/admin/tracker" element={<RoleGuard currentUser={currentUser} allowedRoles={['Admin']}><TrackerView currentRole={currentRole} currentUser={currentUser} applications={applications} internships={internships} allUsers={allUsers} onUpdateStatus={handleUpdateStatus} onFacultyVerifyApplication={handleFacultyVerification} onFacultyVerifyRecruiter={handleRecruiterVerification} onFacultyVerifyStudentProfile={handleFacultyVerifyStudentProfile} onFacultyReviewListing={handleFacultyReviewListing} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/admin/messages" element={<RoleGuard currentUser={currentUser} allowedRoles={['Admin']}><MessagesView currentRole={currentRole} currentUser={currentUser} messages={messages} allUsers={allUsers} applications={applications} internships={internships} onSendMessage={handleSendMessage} onMarkRead={handleMarkRead} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/admin/panel" element={<RoleGuard currentUser={currentUser} allowedRoles={['Admin']}><AdminView currentUser={currentUser} allUsers={allUsers} internships={internships} applications={applications} onInviteUser={handleInviteUser} onRemoveUser={handleRemoveUser} onUpdateUserRole={handleUpdateUserRole} triggerToast={triggerToast} /></RoleGuard>} />
 
-            {currentTab === 'tracker' && (
-              <TrackerView
-                currentRole={currentRole}
-                currentUser={currentUser}
-                applications={applications}
-                internships={currentRole === 'Student' ? studentVisibleInternships : internships}
-                allUsers={currentRole === 'Student' ? studentVisibleUsers : allUsers}
-                onUpdateStatus={handleUpdateStatus}
-                onFacultyVerifyApplication={handleFacultyVerification}
-                onFacultyVerifyRecruiter={handleRecruiterVerification}
-                onFacultyVerifyStudentProfile={handleFacultyVerifyStudentProfile}
-                onFacultyReviewListing={handleFacultyReviewListing}
-                triggerToast={triggerToast}
-              />
-            )}
+              {/* Faculty Protected Routes */}
+              <Route path="/faculty/dashboard" element={<RoleGuard currentUser={currentUser} allowedRoles={['Faculty']}><DashboardView currentRole={currentRole} currentUser={currentUser} internships={internships} applications={applications} activityLogs={activityLogs} setCurrentTab={(tab) => navigate(`/faculty/${tab === 'admin' ? 'panel' : tab}`)} setListingsFilter={setListingsFilter} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/faculty/listings" element={<RoleGuard currentUser={currentUser} allowedRoles={['Faculty']}><ListingsView currentRole={currentRole} currentUser={currentUser} internships={internships} applications={applications} allUsers={allUsers} onAddListing={handleAddListing} onApply={handleApply} triggerToast={triggerToast} listingsFilter={listingsFilter} setListingsFilter={setListingsFilter} onDeleteListing={handleDeleteListing} onFacultyReviewListing={handleFacultyReviewListing} onFacultyVerifyRecruiter={handleRecruiterVerification} /></RoleGuard>} />
+              <Route path="/faculty/tracker" element={<RoleGuard currentUser={currentUser} allowedRoles={['Faculty']}><TrackerView currentRole={currentRole} currentUser={currentUser} applications={applications} internships={internships} allUsers={allUsers} onUpdateStatus={handleUpdateStatus} onFacultyVerifyApplication={handleFacultyVerification} onFacultyVerifyRecruiter={handleRecruiterVerification} onFacultyVerifyStudentProfile={handleFacultyVerifyStudentProfile} onFacultyReviewListing={handleFacultyReviewListing} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/faculty/messages" element={<RoleGuard currentUser={currentUser} allowedRoles={['Faculty']}><MessagesView currentRole={currentRole} currentUser={currentUser} messages={messages} allUsers={allUsers} applications={applications} internships={internships} onSendMessage={handleSendMessage} onMarkRead={handleMarkRead} triggerToast={triggerToast} /></RoleGuard>} />
 
-            {currentTab === 'profile' && (
-              <ProfileView
-                currentUser={currentUser}
-                onUpdateProfile={handleUpdateProfile}
-                triggerToast={triggerToast}
-              />
-            )}
+              {/* Company Protected Routes */}
+              <Route path="/company/dashboard" element={<RoleGuard currentUser={currentUser} allowedRoles={['Company']}><DashboardView currentRole={currentRole} currentUser={currentUser} internships={internships} applications={applications} activityLogs={activityLogs} setCurrentTab={(tab) => navigate(`/company/${tab === 'admin' ? 'panel' : tab}`)} setListingsFilter={setListingsFilter} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/company/listings" element={<RoleGuard currentUser={currentUser} allowedRoles={['Company']}><ListingsView currentRole={currentRole} currentUser={currentUser} internships={internships} applications={applications} allUsers={allUsers} onAddListing={handleAddListing} onApply={handleApply} triggerToast={triggerToast} listingsFilter={listingsFilter} setListingsFilter={setListingsFilter} onDeleteListing={handleDeleteListing} onFacultyReviewListing={handleFacultyReviewListing} onFacultyVerifyRecruiter={handleRecruiterVerification} /></RoleGuard>} />
+              <Route path="/company/tracker" element={<RoleGuard currentUser={currentUser} allowedRoles={['Company']}><TrackerView currentRole={currentRole} currentUser={currentUser} applications={applications} internships={internships} allUsers={allUsers} onUpdateStatus={handleUpdateStatus} onFacultyVerifyApplication={handleFacultyVerification} onFacultyVerifyRecruiter={handleRecruiterVerification} onFacultyVerifyStudentProfile={handleFacultyVerifyStudentProfile} onFacultyReviewListing={handleFacultyReviewListing} triggerToast={triggerToast} /></RoleGuard>} />
+              <Route path="/company/messages" element={<RoleGuard currentUser={currentUser} allowedRoles={['Company']}><MessagesView currentRole={currentRole} currentUser={currentUser} messages={messages} allUsers={allUsers} applications={applications} internships={internships} onSendMessage={handleSendMessage} onMarkRead={handleMarkRead} triggerToast={triggerToast} /></RoleGuard>} />
 
-            {currentTab === 'messages' && (
-              <MessagesView
-                currentRole={currentRole}
-                currentUser={currentUser}
-                messages={currentRole === 'Student' ? studentVisibleMessages : messages}
-                allUsers={currentRole === 'Student' ? studentVisibleUsers : allUsers}
-                applications={applications}
-                internships={currentRole === 'Student' ? studentVisibleInternships : internships}
-                onSendMessage={handleSendMessage}
-                onMarkRead={handleMarkRead}
-                triggerToast={triggerToast}
-              />
-            )}
-
-            {/* Admin Panel tab safety guard */}
-            {currentTab === 'admin' && (
-              currentRole === 'Admin' ? (
-                <AdminView
-                  currentUser={currentUser}
-                  allUsers={allUsers}
-                  internships={internships}
-                  applications={applications}
-                  onInviteUser={handleInviteUser}
-                  onRemoveUser={handleRemoveUser}
-                  onUpdateUserRole={handleUpdateUserRole}
-                  triggerToast={triggerToast}
-                />
-              ) : (
-                <div className="bg-cream-bg rounded-2xl max-w-xl mx-auto border border-amber-300 p-8 shadow-sm text-center space-y-6 fade-in-up">
-                  <div className="h-12 w-12 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center mx-auto border border-amber-200">
-                    <KeyRound size={20} className="animate-pulse" />
-                  </div>
-                  <div className="space-y-2">
-                    <h2 className="font-display font-semibold text-lg text-editorial">
-                      Academic Administrator Credentials Required
-                    </h2>
-                    <p className="text-xs text-gray-500 leading-relaxed font-sans max-w-md mx-auto">
-                      You are trying to reach the university oversight panel as a <strong className="text-editorial">"{currentRole}"</strong>. Only registered Coordinators carry invitation permissions.
-                    </p>
-                  </div>
-                </div>
-              )
-            )}
-
+              <Route path="*" element={<Navigate to={`/${currentRole.toLowerCase()}/${currentRole === 'Admin' ? 'panel' : 'dashboard'}`} replace />} />
+            </Routes>
           </div>
         </main>
-        
-        {/* Soft, minimal footer */}
-        <footer className="h-8 border-t border-[#ecece0]/50 bg-cream-bg/40 px-6 flex items-center justify-between text-[10px] text-gray-400 font-mono select-none">
-          <span>INCIPIO ACADEMIC CAREER SERVICE V2.16</span>
+        <footer className="h-8 border-t border-slate-200 bg-slate-50/40 px-6 flex items-center justify-between text-[10px] text-slate-400 font-mono select-none">
+          <span>PLACERA ACADEMIC PLACEMENT SERVICE V2.16</span>
           <span className="hidden sm:inline">ALL SIMULATED DATA PERSISTS SECURELY IN MONGODB DATABASE</span>
         </footer>
-
       </div>
+
+      {/* Persistent AI Career Advisor Chatbot (Only for Students) */}
+      {currentRole === 'Student' && (
+        <CareerAdvisorChatbot
+          currentUser={currentUser}
+          triggerToast={triggerToast}
+        />
+      )}
 
       {/* Dynamic Toast Popup Container */}
       <ToastList toasts={toasts} onCloseToast={handleCloseToast} />
-
-      {/* Global Role Simulator Switcher */}
-      <RoleSimulator 
-        currentRole={currentRole}
-        currentUser={currentUser}
-        onSimulateLogin={handleSimulateLogin}
-        onLogout={handleLogout}
-      />
-
     </div>
   );
 }
-
